@@ -39,36 +39,19 @@ for k in list(MIR_QUALITIES.keys()) + ['7(b9)', '7(#9)', '7(#11)', '7(b13)']:
         tmp_feats = rt_vec + list(np.roll(semitone_bitmap, rt))
         CHORD_FEATURES[ r_str + (len(k) > 0)*':' + k ] = tmp_feats
 
-class CSGridMLMTokenizer(PreTrainedTokenizer):
-    def __init__(
-            self,
-            quantization='16th',
-            fixed_length=None,
-            vocab=None,
-            special_tokens=None,
-            use_pc_roll=True,
-            use_full_range_melody=True,
-            intertwine_bar_info=True,
-            trim_start=False,
-            **kwargs
-        ):
+class GuidedGridMLMTokenizer(PreTrainedTokenizer):
+    def __init__(self, quantization='16th', fixed_length=None, vocab=None, special_tokens=None, use_pc_roll=True, **kwargs):
         self.unk_token = '<unk>'
         self.pad_token = '<pad>'
         self.bos_token = '<s>'
         self.eos_token = '</s>'
         self.no_chord = '<nc>'
-        self.nc_token = '<nc>'
         self.csl_token = '<s>'
         self.mask_token = '<mask>'
-        self.bar_token = '<bar>'
         self.quantization = quantization
         self.fixed_length = fixed_length
-        self.intertwine_bar_info = intertwine_bar_info
-        self.trim_start = trim_start
         self.special_tokens = {}
         self.use_pc_roll = use_pc_roll
-        self.use_full_range_melody = use_full_range_melody
-        self.pianoroll_dim = 88*use_full_range_melody + 12*use_pc_roll + intertwine_bar_info
         self.construct_basic_vocab()
         if vocab is not None:
             self.vocab = vocab
@@ -86,12 +69,16 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 pitch_obj = pitch_obj.getEnharmonic()  # Convert to sharp
             chromatic_roots.append(pitch_obj.name)  # Use sharp representation
 
-        qualities = list(EXT_MIR_QUALITIES.keys())
+        self.qualities = list(EXT_MIR_QUALITIES.keys())
+        self.chord_tokens = []
+        self.chord_token_ids = []
 
         for root in chromatic_roots:
-            for quality in qualities:
+            for quality in self.qualities:
                     chord_token = root + (len(quality) > 0)*':' + quality
                     self.vocab[chord_token] = len(self.vocab)
+                    self.chord_tokens.append( root + (len(quality) > 0)*':' + quality )
+                    self.chord_token_ids.append( self.vocab[chord_token] )
         self.update_ids_to_tokens()
         self.total_vocab_size = len(self.vocab)
     # end init
@@ -104,7 +91,6 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 '</s>': 3,
                 '<nc>': 4,
                 '<mask>': 5,
-                '<bar>': 6
             }
 
         self.update_ids_to_tokens()
@@ -114,7 +100,6 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         self.eos_token_id = 3
         self.nc_token_id = 4
         self.mask_token_id = 5
-        self.bar_token_id = 6
         # Compute and store most popular time signatures coming from predefined time tokens
         self.time_quantization = []  # Store predefined quantized times
         self.time_signatures = []  # Store most common time signatures
@@ -256,6 +241,11 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         # from chord symbol tokenizer for the time being
         # Normalize and add the chord symbol
         root_token, type_token = self.normalize_chord_symbol(h)
+        # update chord type distribution feature
+        try:
+            type_idx = self.qualities.index(type_token)
+        except:
+            print("type not found: ", type_token)
         chord_token = root_token + (len(type_token) > 0)*':' + type_token
         if chord_token in self.vocab:
             chord_token_id = self.vocab[chord_token]
@@ -279,8 +269,8 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         ids = []
         for file_path in tqdm(corpus, desc="Processing Files"):
             encoded = self.encode(file_path, add_start_harmony_token=add_start_harmony_token)
-            harmony_tokens = encoded['harmony_tokens']
-            harmony_ids = encoded['harmony_ids']
+            harmony_tokens = encoded['input_tokens']
+            harmony_ids = encoded['input_ids']
             tokens.append(harmony_tokens)
             ids.append(harmony_ids)
         return {'tokens': tokens, 'ids': ids}
@@ -335,152 +325,102 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         return score
     # end randomize_score
 
-    def pitch_class_from_chord_token(self, chord_token):
-        """
-        Convert a chord token to its pitch class profile.
-        
-        Parameters
-        ----------
-        chord_token : str
-            Chord token in the format "Root:Quality" or "<nc>" or "<pad>".
-        
-        Returns
-        -------
-        np.ndarray
-            12D binary vector representing the pitch class profile.
-        """
-        if chord_token in [self.nc_token, self.pad_token, self.bar_token]:
-            return np.zeros(12, dtype=int)
-
-        if chord_token not in self.vocab:
-            return np.zeros(12, dtype=int)
-
-        try:
-            root, quality = chord_token.split(':')
-        except ValueError:
-            root = chord_token
-            quality = ''
-        
-        if quality not in EXT_MIR_QUALITIES:
-            return np.zeros(12, dtype=int)
-
-        # Get root pitch class
-        root_pitch = pitch.Pitch(root)
-        root_pc = root_pitch.pitchClass
-
-        # Get quality pitch class bitmap
-        quality_bitmap = EXT_MIR_QUALITIES[quality]
-
-        # Rotate bitmap to match root
-        pc_profile = np.roll(quality_bitmap, root_pc)
-
-        return pc_profile
-    # end pitch_class_from_chord_token
-
-    def to_category(self, x, thresholds):
-        if x <= thresholds[0]:
-            return [1,0,0,0]
-        elif x < thresholds[1]:
-            return [0,1,0,0]
-        else:
-            return [0,0,1,0]
-    # end to_category
-
-    def compute_harmonic_rhythm_density(self, chord_token_ids):
-        """
-        Compute harmonic rhythm density: average number of chord changes
-        per bar that contains at least one valid chord.
-        
-        Args:
-            chord_token_ids (list[int]): sequence of tokens including bar, chord, nc, and pad.
-            
-        Returns:
-            float: average number of chord changes per bar with chords,
-                or 0.0 if no valid bar exists.
-        """
-        bars = []
-        current_bar = []
-
-        # Split into bars
-        for tok in chord_token_ids:
-            if tok == self.bar_token_id:
-                if current_bar:  # save previous bar
-                    bars.append(current_bar)
-                current_bar = []
+    def features_from_token_ids(self, inp_ids):
+        # for computing features
+        chord_distribution = [0]*len(self.chord_token_ids)
+        # chord_duration_distribution = [0]*8 # for 1, 2, 4, 8, 16, ... 128 consecutive occurances
+        tmp_count = 0
+        prev_id = -1
+        for t in inp_ids:
+            if prev_id == t:
+                tmp_count += 1
             else:
-                current_bar.append(tok)
-        if current_bar:  # last bar
-            bars.append(current_bar)
+                if prev_id != -1:
+                    chord_token = self.ids_to_tokens[prev_id]
+                    if chord_token != '<nc>' and chord_token != '<pad>':
+                        if t in self.chord_token_ids:
+                            # update chord type distribution
+                            chord_idx = self.chord_token_ids.index(t)
+                            chord_distribution[ chord_idx ] += 1
+                            # update chord duration distribution
+                            # chord_duration_distribution[ min( int(np.log2(tmp_count)), 7 ) ] += 1
+                tmp_count = 1
+                prev_id = t
+        chord_token = self.ids_to_tokens[prev_id]
+        if chord_token != '<nc>' and chord_token != '<pad>':
+            if t in self.chord_token_ids:
+                # update chord type distribution
+                chord_idx = self.chord_token_ids.index(t)
+                chord_distribution[ chord_idx ] += 1
+                # update chord duration distribution
+                # chord_duration_distribution[ min( int(np.log2(tmp_count)), 7 ) ] += 1
+        # normalize features
+        s_tmp = sum(chord_distribution)
+        if s_tmp > 0:
+            for i in range(len(chord_distribution)):
+                chord_distribution[i] /= s_tmp
+        return chord_distribution
+        # s_tmp = sum(chord_duration_distribution)
+        # if s_tmp > 0:
+        #     for i in range(len(chord_duration_distribution)):
+        #         chord_duration_distribution[i] /= s_tmp
+        # return chord_distribution + chord_duration_distribution
+    # end features_from_token_ids
 
-        chord_counts = []
-
-        for bar in bars:
-            valid_chords = [t for t in bar if t not in (self.nc_token_id, self.pad_token_id)]
-            if not valid_chords:
-                continue  # skip bars without valid chords
-
-            # Count chord changes (successive unique chord IDs)
-            changes = 1  # at least one chord if valid_chords is not empty
-            for prev, curr in zip(valid_chords, valid_chords[1:]):
-                if curr != prev:
-                    changes += 1
-
-            chord_counts.append(changes)
-
-        if not chord_counts:
-            return 0.0  # no valid bars
-        
-        hrd = sum(chord_counts) / len(chord_counts)
-        return hrd, self.to_category(hrd, [1.0001, 1.5556])
-    # end compute_harmonic_rhythm_density
-
-    def compute_harmonic_complexity(self, chord_tokens):
-        """
-        Compute harmonic complexity as the information entropy of the average
-        pitch class profile across the given chord sequence.
-
-        Parameters
-        ----------
-        chord_tokens : list
-            List of chord tokens (strings or ids, depending on how pitch_class_from_chord_token works).
-
-        Returns
-        -------
-        float
-            Harmonic complexity (entropy in nats).
-        """
-        if not chord_tokens:
-            return 0.0
-
-        # Accumulate pitch class profiles
-        pitch_class_sum = np.zeros(12, dtype=float)
-        for chord_token in chord_tokens:
-            pc_profile = self.pitch_class_from_chord_token(chord_token)  # 12D binary vector
-            pitch_class_sum += pc_profile
-
-        # Normalize to a probability distribution
-        if np.sum(pitch_class_sum) == 0:
-            return 0.0
-        pitch_class_dist = pitch_class_sum / np.sum(pitch_class_sum)
-
-        # Compute entropy (natural log)
-        entropy = -np.sum(pitch_class_dist * np.log(pitch_class_dist + 1e-12))
-
-        return float(entropy), self.to_category(entropy, [1.8225, 1.9254])
-    # end compute_harmonic_complexity
+    def features_from_tokens(self, inp_toks):
+        # for computing features
+        chord_distribution = [0]*len(self.chord_tokens)
+        # chord_duration_distribution = [0]*8 # for 1, 2, 4, 8, 16, ... 128 consecutive occurances
+        tmp_count = 0
+        prev_tok = '-1'
+        for chord_token in inp_toks:
+            if prev_tok == chord_token:
+                tmp_count += 1
+            else:
+                if prev_tok != -1:
+                    if chord_token != '<nc>' and chord_token != '<pad>':
+                        if chord_token in self.chord_tokens:
+                            # update chord type distribution
+                            chord_idx = self.chord_tokens.index(chord_token)
+                            chord_distribution[ chord_idx ] += 1
+                            # update chord duration distribution
+                            # chord_duration_distribution[ min( int(np.log2(tmp_count)), 7 ) ] += 1
+                tmp_count = 1
+                prev_tok = chord_token
+        chord_token = prev_tok
+        if chord_token != '<nc>' and chord_token != '<pad>':
+            if chord_token in self.chord_tokens:
+                # update chord type distribution
+                chord_idx = self.chord_token_ids.index(chord_token)
+                chord_distribution[ chord_idx ] += 1
+                # update chord duration distribution
+                # chord_duration_distribution[ min( int(np.log2(tmp_count)), 7 ) ] += 1
+        # normalize features
+        s_tmp = sum(chord_distribution)
+        if s_tmp > 0:
+            for i in range(len(chord_distribution)):
+                chord_distribution[i] /= s_tmp
+        return chord_distribution
+        # s_tmp = sum(chord_duration_distribution)
+        # if s_tmp > 0:
+        #     for i in range(len(chord_duration_distribution)):
+        #         chord_duration_distribution[i] /= s_tmp
+        # return chord_distribution + chord_duration_distribution
+    # end features_from_tokens
 
     def encode(
             self,
             file_path,
+            trim_start=True,
             filler_token='<nc>',
             keep_durations=False,
             normalize_tonality=False
         ):
         file_ext = file_path.split('.')[-1]
-        
         if file_ext in ['xml', 'mxl', 'musicxml']:
             return self.encode_musicXML(
                 file_path,
+                trim_start=trim_start,
                 filler_token=filler_token,
                 keep_durations=keep_durations,
                 normalize_tonality=normalize_tonality
@@ -488,6 +428,7 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         elif file_ext in ['mid', 'midi']:
             return self.encode_MIDI(
                 file_path,
+                trim_start=trim_start,
                 filler_token=filler_token,
                 keep_durations=keep_durations,
                 normalize_tonality=normalize_tonality
@@ -499,6 +440,7 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
     def encode_musicXML(
             self,
             file_path,
+            trim_start=True,
             filler_token='<nc>',
             keep_durations=False,
             normalize_tonality=False
@@ -513,40 +455,35 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
             score = transpose_score(score, to_c_or_a_interval)
             # Keep interval to transpose back to original key later
             back_interval = to_c_or_a_interval.reverse()
-
+        
         time_signature = score.recurse().getElementsByClass(meter.TimeSignature).first()
         ts_num_list = [0]*14
         ts_den_list = [0,0]
         ts_num_list[ int( min( max(time_signature.numerator-2,0) , 13) ) ] = 1
         ts_den_list[ int( time_signature.denominator == 4 ) ] = 1
         melody_part = score.parts[0].flatten()
-        chords_part = None
-        if len(score.parts) > 1:
-            chords_part = score.parts[1].chordify().flatten()
+
         # Define quantization note length
         if self.quantization == '16th':
             ql_per_quantum = 1 / 4
         elif self.quantization == '8th':
             ql_per_quantum = 1 / 2
-        elif self.quantization == '4th':
-            ql_per_quantum = 1
         elif self.quantization == '32nd':
             ql_per_quantum = 1 / 8
         else: # assume 16th
             ql_per_quantum = 1 / 4
 
-        # Find first chord symbol and bar to trim before it
+        # Get pitch range: MIDI 21 (A0) to 108 (C8) -> 88 notes
+        pitch_range = list(range(21, 109))
+        n_pitch = len(pitch_range)
+
+        # Step 1: Find first chord symbol and bar to trim before it
         first_chord_offset = None
         skip_steps = 0
-        if self.trim_start:
-            if chords_part is None:
-                for el in melody_part.recurse().getElementsByClass(harmony.ChordSymbol):
-                    first_chord_offset = el.offset
-                    break
-            else:
-                for el in chords_part:
-                    first_chord_offset = el.offset
-                    break
+        if trim_start:
+            for el in melody_part.recurse().getElementsByClass(harmony.ChordSymbol):
+                first_chord_offset = el.offset
+                break
             measure_start_offset = 0.0
             if first_chord_offset is not None:
                 for meas in melody_part.getElementsByClass(stream.Measure):
@@ -555,36 +492,43 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                         break
             skip_steps = int(np.round(measure_start_offset / ql_per_quantum))
 
-        # Determine total length in quantum length notes
+        # Determine total length in 16th notes
         total_duration_q = melody_part.highestTime
         total_steps = int(np.ceil(total_duration_q / ql_per_quantum))
-        
-        # initialize chord tokens
+
+        # Allocate raw matrices (we will trim/pad later)
+        raw_pianoroll = np.zeros((total_steps, n_pitch), dtype=np.uint8)
         chord_tokens = [None] * total_steps
         chord_token_ids = [self.pad_token_id] * total_steps
-        
-        # Fill chord grid
-        if chords_part is None:
-            for el in melody_part.recurse().getElementsByClass(harmony.ChordSymbol):
-                start = int(np.floor(el.offset / ql_per_quantum))
-                if 0 <= start < len(chord_tokens):
-                    chord_tokens[start], chord_token_ids[start] = self.handle_chord_symbol(el)
-                if keep_durations:
-                    end = int(np.ceil( (el.offset + el.duration.quarterLength) / ql_per_quantum)) + 1
-                    if end < len(chord_tokens):
-                        chord_tokens[end] = '<nc>'
-                        chord_token_ids[end] = self.vocab['<nc>']
-        else:
-            for el in chords_part.recurse().getElementsByClass(chord.Chord):
-                start = int(np.round(el.offset / ql_per_quantum))
-                if 0 <= start < len(chord_tokens):
-                    chord_tokens[start], chord_token_ids[start] = self.handle_chord_symbol(el)
-                if keep_durations:
-                    end = int(np.round( (el.offset + el.duration.quarterLength) / ql_per_quantum)) + 1
-                    if end < len(chord_tokens):
-                        chord_tokens[end] = '<nc>'
-                        chord_token_ids[end] = self.vocab['<nc>']
 
+        # Fill pianoroll
+        for el in melody_part.notesAndRests:
+            start = int(np.round(el.offset / ql_per_quantum))
+            dur_steps = int(np.round(el.quarterLength / ql_per_quantum))
+
+            if isinstance(el, note.Note):
+                midi = el.pitch.midi
+                if midi in pitch_range:
+                    idx = pitch_range.index(midi)
+                    raw_pianoroll[start:start+dur_steps, idx] = 1
+
+            elif isinstance(el, chord.Chord):  # Just in case
+                for pitch in el.pitches:
+                    midi = pitch.midi
+                    if midi in pitch_range:
+                        idx = pitch_range.index(midi)
+                        raw_pianoroll[start:start+dur_steps, idx] = 1
+
+        # Fill chord grid
+        for el in melody_part.recurse().getElementsByClass(harmony.ChordSymbol):
+            start = int(np.round(el.offset / ql_per_quantum))
+            if 0 <= start < len(chord_tokens):
+                chord_tokens[start], chord_token_ids[start] = self.handle_chord_symbol(el)
+            if keep_durations:
+                end = int(np.round( (el.offset + el.duration.quarterLength) / ql_per_quantum)) + 1
+                if end < len(chord_tokens):
+                    chord_tokens[end] = '<nc>'
+                    chord_token_ids[end] = self.vocab['<nc>']
         # Propagate chord forward
         for i in range(1, len(chord_tokens)):
             if chord_tokens[i] is None:
@@ -597,33 +541,14 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 chord_tokens[i] = filler_token
                 chord_token_ids[i] = self.vocab[filler_token]
 
-        # compute full range pianoroll
-        # Get pitch range: MIDI 21 (A0) to 108 (C8) -> 88 notes
-        pitch_range = list(range(21, 109))
-        n_pitch = len(pitch_range)
-        # Allocate raw matrices (we will trim/pad later)
-        raw_pianoroll = np.zeros((total_steps, n_pitch), dtype=np.uint8)
+        # Trim to start at first chord bar
+        if trim_start:
+            raw_pianoroll = raw_pianoroll[skip_steps:]
+            chord_tokens = chord_tokens[skip_steps:]
+            chord_token_ids = chord_token_ids[skip_steps:]
 
-        # Fill pianoroll
-        for el in melody_part.notesAndRests:
-            start = int(np.floor(el.offset / ql_per_quantum))
-            dur_steps = int(np.ceil(el.quarterLength / ql_per_quantum))
-            
-            if isinstance(el, note.Note):
-                midi = el.pitch.midi
-                if midi in pitch_range:
-                    idx = pitch_range.index(midi)
-                    raw_pianoroll[start:start+dur_steps, idx] = 1
-
-            elif isinstance(el, chord.Chord):  # Just in case
-                for pitch in el.pitches:
-                    midi = pitch.midi
-                    if midi in pitch_range:
-                        idx = pitch_range.index(midi)
-                        raw_pianoroll[start:start+dur_steps, idx] = 1
-
-        # compute pitch class profile (top 12 dims) if needed
-        n_steps = raw_pianoroll.shape[0]
+        # Add pitch class profile (top 12 dims)
+        n_steps = len(raw_pianoroll)
         if self.use_pc_roll:
             pitch_classes = np.zeros((n_steps, 12), dtype=np.uint8)
             for i in range(n_steps):
@@ -631,73 +556,11 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 for idx in pitch_indices:
                     midi = pitch_range[idx]
                     pitch_classes[i, midi % 12] = 1
-            if self.use_full_range_melody:
-                full_pianoroll = np.hstack([pitch_classes, raw_pianoroll])  # Shape: (T, 12 + 88)
-            else:
-                full_pianoroll = pitch_classes  # Shape: (T, 12)
+            full_pianoroll = np.hstack([pitch_classes, raw_pianoroll])  # Shape: (T, 12 + 88)
         else:
             full_pianoroll = raw_pianoroll  # Shape: (T, 88)
-        
-        # intertwine bar information in pianoroll and harmony tokens
-        if self.intertwine_bar_info:
-            # --- Prepare ---
-            num_steps = full_pianoroll.shape[0]  # current time steps (rows)
-            num_pitches = full_pianoroll.shape[1]  # columns = pitches/features
-            bar_column = np.zeros((num_steps, 1), dtype=np.float32)  # all-zero bar column
-            full_pianoroll = np.hstack([full_pianoroll, bar_column])  # add extra column at the end
 
-            # Compute insertion indices (where bars start)
-            # Assuming you already know bar_step positions from melody or measure offsets
-            insertion_indices = []
-            for meas in score.parts[0].getElementsByClass(stream.Measure):
-                bar_step = int(np.round(meas.offset / ql_per_quantum))
-                if 0 <= bar_step <= full_pianoroll.shape[0]:  # allow insertion at end too
-                    insertion_indices.append(bar_step)
-
-            # Make sure sorted and unique
-            insertion_indices = sorted(set(insertion_indices))
-
-            # --- Insert bar columns into pianoroll ---
-            pianoroll_ext = []
-            step = 0
-            for i in range(full_pianoroll.shape[0]):
-                if i in insertion_indices:
-                    # insert a bar row
-                    bar_row = np.zeros((1, full_pianoroll.shape[1]), dtype=np.float32)
-                    bar_row[0, -1] = 1.0  # mark in the bar column
-                    pianoroll_ext.append(bar_row)
-                # always add the original step (aligned)
-                if step < full_pianoroll.shape[0]:
-                    pianoroll_ext.append(full_pianoroll[step:(step + 1), :])
-                    step += 1
-            
-            full_pianoroll = np.vstack(pianoroll_ext)
-
-            # --- Insert bar tokens into chord sequence ---
-            chord_tokens_ext = []
-            chord_token_ids_ext = []
-            step = 0
-            for i in range(len(chord_tokens)):
-                if i in insertion_indices:  # bar insertion
-                    chord_tokens_ext.append(self.bar_token)
-                    chord_token_ids_ext.append(self.bar_token_id)
-                if step < len(chord_tokens):
-                    chord_tokens_ext.append(chord_tokens[step])
-                    chord_token_ids_ext.append(chord_token_ids[step])
-                    step += 1
-
-            chord_tokens = chord_tokens_ext
-            chord_token_ids = chord_token_ids_ext
-        # end intertwine bars
-
-        # Trim to start at first chord bar
-        if self.trim_start:
-            raw_pianoroll = raw_pianoroll[skip_steps:]
-            chord_tokens = chord_tokens[skip_steps:]
-            chord_token_ids = chord_token_ids[skip_steps:]
-        
         # Apply fixed length (pad or trim)
-        n_steps = len(chord_tokens) # should theoretically be equal to len(full_pianoroll)
         if self.fixed_length is not None:
             if n_steps >= self.fixed_length:
                 full_pianoroll = full_pianoroll[:self.fixed_length]
@@ -715,37 +578,25 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 attention_mask = [1]*n_steps + [0]*pad_len
         else:
             attention_mask = [1]*n_steps
-
-        # compute rhythm density and harmonic complexity
-        # each function returns a numerical value
-        # that will later be translated into a
-        # 4D binary array with categories:
-        # [1,0,0,0]: low
-        # [0,1,0,0]: medium
-        # [0,0,1,0]: high
-        # [0,0,0,1]: no condition
-        h_rhythm, r_cat = self.compute_harmonic_rhythm_density(chord_token_ids)
-        h_complexity, c_cat = self.compute_harmonic_complexity(chord_tokens)
-
         return {
-            'harmony_tokens': chord_tokens,
-            'harmony_ids': chord_token_ids,
+            'input_tokens': chord_tokens,
+            'input_ids': chord_token_ids,
             'pianoroll': full_pianoroll,
             'time_signature': ts_num_list + ts_den_list,
             'attention_mask': attention_mask,
             'skip_steps': skip_steps,
-            'melody_part': melody_part,
+            'melody_part':melody_part,
             'ql_per_quantum': ql_per_quantum,
+            'features': self.features_from_token_ids(chord_token_ids),
             'back_interval': back_interval if normalize_tonality else None,
-            'harmonic_rhythm_density': h_rhythm,
-            'harmonic_complexity': h_complexity,
-            'h_density_complexity': r_cat + c_cat
+            'file_path': file_path
         }
     # end encode_musicXML
 
     def encode_MIDI(
             self,
             file_path,
+            trim_start=True,
             filler_token='<nc>',
             keep_durations=False,
             normalize_tonality=False
@@ -770,26 +621,28 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         chords_part = None
         if len(score.parts) > 1:
             chords_part = score.parts[1].chordify().flatten()
+
         # Define quantization note length
         if self.quantization == '16th':
             ql_per_quantum = 1 / 4
         elif self.quantization == '8th':
             ql_per_quantum = 1 / 2
-        elif self.quantization == '4th':
-            ql_per_quantum = 1
         elif self.quantization == '32nd':
             ql_per_quantum = 1 / 8
         else: # assume 16th
             ql_per_quantum = 1 / 4
 
-        # Find first chord symbol and bar to trim before it
+        # Get pitch range: MIDI 21 (A0) to 108 (C8) -> 88 notes
+        pitch_range = list(range(21, 109))
+        n_pitch = len(pitch_range)
+
+        # Step 1: Find first chord symbol and bar to trim before it
         first_chord_offset = None
         skip_steps = 0
-        if self.trim_start:
-            if chords_part is not None:
-                for el in chords_part.recurse().getElementsByClass(chord.Chord):
-                    first_chord_offset = el.offset
-                    break
+        if trim_start:
+            for el in melody_part.recurse().getElementsByClass(harmony.ChordSymbol):
+                first_chord_offset = el.offset
+                break
             measure_start_offset = 0.0
             if first_chord_offset is not None:
                 for meas in melody_part.getElementsByClass(stream.Measure):
@@ -798,50 +651,20 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                         break
             skip_steps = int(np.round(measure_start_offset / ql_per_quantum))
 
-        # Determine total length in quantum length notes
+        # Determine total length in 16th notes
         total_duration_q = melody_part.highestTime
         total_steps = int(np.ceil(total_duration_q / ql_per_quantum))
 
-        # initialize chord tokens
+        # Allocate raw matrices (we will trim/pad later)
+        raw_pianoroll = np.zeros((total_steps, n_pitch), dtype=np.uint8)
         chord_tokens = [None] * total_steps
         chord_token_ids = [self.pad_token_id] * total_steps
 
-        # Fill chord grid
-        if chords_part is not None:
-            for el in chords_part.recurse().getElementsByClass(chord.Chord):
-                start = int(np.floor(el.offset / ql_per_quantum))
-                if 0 <= start < len(chord_tokens):
-                    chord_tokens[start], chord_token_ids[start] = self.handle_chord_symbol(el)
-                if keep_durations:
-                    end = int(np.ceil( (el.offset + el.duration.quarterLength) / ql_per_quantum) )# + 1
-                    if end < len(chord_tokens) and chord_tokens[end] is None:
-                        chord_tokens[end] = '<nc>'
-                        chord_token_ids[end] = self.vocab['<nc>']
-            
-            # Propagate chord forward
-            for i in range(1, len(chord_tokens)):
-                if chord_tokens[i] is None:
-                    chord_tokens[i] = chord_tokens[i-1]
-                    chord_token_ids[i] = chord_token_ids[i-1]
-            
-            # Fill missing with <pad> or <nc>
-            for i in range(len(chord_tokens)):
-                if chord_tokens[i] is None:
-                    chord_tokens[i] = filler_token
-                    chord_token_ids[i] = self.vocab[filler_token]
-        
-        # compute full range pianoroll
-        # Get pitch range: MIDI 21 (A0) to 108 (C8) -> 88 notes
-        pitch_range = list(range(21, 109))
-        n_pitch = len(pitch_range)
-        # Allocate raw matrices (we will trim/pad later)
-        raw_pianoroll = np.zeros((total_steps, n_pitch), dtype=np.uint8)
-
         # Fill pianoroll
         for el in melody_part.notesAndRests:
-            start = int(np.floor(el.offset / ql_per_quantum))
-            dur_steps = int(np.ceil(el.quarterLength / ql_per_quantum))
-            
+            start = int(np.round(el.offset / ql_per_quantum))
+            dur_steps = int(np.round(el.quarterLength / ql_per_quantum))
+
             if isinstance(el, note.Note):
                 midi = el.pitch.midi
                 if midi in pitch_range:
@@ -855,7 +678,36 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                         idx = pitch_range.index(midi)
                         raw_pianoroll[start:start+dur_steps, idx] = 1
 
-        # compute pitch class profile (top 12 dims) if needed
+        # Fill chord grid
+        if chords_part is not None:
+            for el in chords_part.recurse().getElementsByClass(chord.Chord):
+                start = int(np.round(el.offset / ql_per_quantum))
+                if 0 <= start < len(chord_tokens):
+                    chord_tokens[start], chord_token_ids[start] = self.handle_chord_symbol(el)
+                if keep_durations:
+                    end = int(np.round( (el.offset + el.duration.quarterLength) / ql_per_quantum)) + 1
+                    if end < len(chord_tokens):
+                        chord_tokens[end] = '<nc>'
+                        chord_token_ids[end] = self.vocab['<nc>']
+            # Propagate chord forward
+            for i in range(1, len(chord_tokens)):
+                if chord_tokens[i] is None:
+                    chord_tokens[i] = chord_tokens[i-1]
+                    chord_token_ids[i] = chord_token_ids[i-1]
+
+        # Fill missing with <pad> or <nc>
+        for i in range(len(chord_tokens)):
+            if chord_tokens[i] is None:
+                chord_tokens[i] = filler_token
+                chord_token_ids[i] = self.vocab[filler_token]
+
+        # Trim to start at first chord bar
+        if trim_start:
+            raw_pianoroll = raw_pianoroll[skip_steps:]
+            chord_tokens = chord_tokens[skip_steps:]
+            chord_token_ids = chord_token_ids[skip_steps:]
+
+        # Add pitch class profile (top 12 dims)
         n_steps = len(raw_pianoroll)
         if self.use_pc_roll:
             pitch_classes = np.zeros((n_steps, 12), dtype=np.uint8)
@@ -864,73 +716,11 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 for idx in pitch_indices:
                     midi = pitch_range[idx]
                     pitch_classes[i, midi % 12] = 1
-            if self.use_full_range_melody:
-                full_pianoroll = np.hstack([pitch_classes, raw_pianoroll])  # Shape: (T, 12 + 88)
-            else:
-                full_pianoroll = pitch_classes  # Shape: (T, 12)
+            full_pianoroll = np.hstack([pitch_classes, raw_pianoroll])  # Shape: (T, 12 + 88)
         else:
             full_pianoroll = raw_pianoroll  # Shape: (T, 88)
-        
-        # intertwine bar information in pianoroll and harmony tokens
-        if self.intertwine_bar_info:
-            # --- Prepare ---
-            num_steps = full_pianoroll.shape[0]  # current time steps (rows)
-            num_pitches = full_pianoroll.shape[1]  # columns = pitches/features
-            bar_column = np.zeros((num_steps, 1), dtype=np.float32)  # all-zero bar column
-            full_pianoroll = np.hstack([full_pianoroll, bar_column])  # add extra column at the end
 
-            # Compute insertion indices (where bars start)
-            # Assuming you already know bar_step positions from melody or measure offsets
-            insertion_indices = []
-            for meas in score.parts[0].getElementsByClass(stream.Measure):
-                bar_step = int(np.round(meas.offset / ql_per_quantum))
-                if 0 <= bar_step <= full_pianoroll.shape[0]:  # allow insertion at end too
-                    insertion_indices.append(bar_step)
-
-            # Make sure sorted and unique
-            insertion_indices = sorted(set(insertion_indices))
-
-            # --- Insert bar columns into pianoroll ---
-            pianoroll_ext = []
-            step = 0
-            for i in range(full_pianoroll.shape[0]):
-                if i in insertion_indices:
-                    # insert a bar row
-                    bar_row = np.zeros((1, full_pianoroll.shape[1]), dtype=np.float32)
-                    bar_row[0, -1] = 1.0  # mark in the bar column
-                    pianoroll_ext.append(bar_row)
-                # always add the original step (aligned)
-                if step < full_pianoroll.shape[0]:
-                    pianoroll_ext.append(full_pianoroll[step:(step + 1), :])
-                    step += 1
-            
-            full_pianoroll = np.vstack(pianoroll_ext)
-
-            # --- Insert bar tokens into chord sequence ---
-            chord_tokens_ext = []
-            chord_token_ids_ext = []
-            step = 0
-            for i in range(len(chord_tokens)):
-                if i in insertion_indices:  # bar insertion
-                    chord_tokens_ext.append(self.bar_token)
-                    chord_token_ids_ext.append(self.bar_token_id)
-                if step < len(chord_tokens):
-                    chord_tokens_ext.append(chord_tokens[step])
-                    chord_token_ids_ext.append(chord_token_ids[step])
-                    step += 1
-
-            chord_tokens = chord_tokens_ext
-            chord_token_ids = chord_token_ids_ext
-        # end intertwine bars
-
-        # Trim to start at first chord bar
-        if self.trim_start:
-            raw_pianoroll = raw_pianoroll[skip_steps:]
-            chord_tokens = chord_tokens[skip_steps:]
-            chord_token_ids = chord_token_ids[skip_steps:]
-            
         # Apply fixed length (pad or trim)
-        n_steps = len(chord_tokens) # should theoretically be equal to len(full_pianoroll)
         if self.fixed_length is not None:
             if n_steps >= self.fixed_length:
                 full_pianoroll = full_pianoroll[:self.fixed_length]
@@ -948,31 +738,18 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
                 attention_mask = [1]*n_steps + [0]*pad_len
         else:
             attention_mask = [1]*n_steps
-
-        # compute rhythm density and harmonic complexity
-        # each function returns a numerical value
-        # that will later be translated into a
-        # 4D binary array with categories:
-        # [1,0,0,0]: low
-        # [0,1,0,0]: medium
-        # [0,0,1,0]: high
-        # [0,0,0,1]: no condition
-        h_rhythm, r_cat = self.compute_harmonic_rhythm_density(chord_token_ids)
-        h_complexity, c_cat = self.compute_harmonic_complexity(chord_tokens)
-
         return {
-            'harmony_tokens': chord_tokens,
-            'harmony_ids': chord_token_ids,
+            'input_tokens': chord_tokens,
+            'input_ids': chord_token_ids,
             'pianoroll': full_pianoroll,
             'time_signature': ts_num_list + ts_den_list,
             'attention_mask': attention_mask,
             'skip_steps': skip_steps,
             'melody_part':melody_part,
             'ql_per_quantum': ql_per_quantum,
+            'features': self.features_from_token_ids(chord_token_ids),
             'back_interval': back_interval if normalize_tonality else None,
-            'harmonic_rhythm_density': h_rhythm,
-            'harmonic_complexity': h_complexity,
-            'h_density_complexity': r_cat + c_cat
+            'file_path': file_path
         }
     # end encode_MIDI
 
@@ -1019,4 +796,4 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         return cls(vocab, special_tokens)
     # end from_pretrained
 
-# end class CSGridMLMTokenizer
+# end class GuidedGridMLMTokenizer
