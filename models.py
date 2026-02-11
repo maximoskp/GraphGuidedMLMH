@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from torch.nn import TransformerEncoderLayer
+from torch.nn import TransformerEncoderLayer, Sequential, Linear, ReLU
 from torch_geometric.data import Data, Batch
+from torch_geometric.nn import GINEConv
 from collections import defaultdict
 import math
 from copy import deepcopy
@@ -1545,6 +1546,89 @@ def make_graph_from_input_ids(chord_id_duplicates_sequence, chord_id_features, u
 # Example:
 # graph = make_graph_from_chords(chord_ids_sequence, chord_id_features)
 # batch = Batch.from_data_list([graph1, graph2, ...])
-# model = GraphVAE()
-# recon_x, mu, logvar = model(batch)
-# loss = vae_loss(recon_x, batch.x, mu, logvar)
+
+
+# ================ GRAPH models ====================
+
+class HarmonicGraphEncoder(torch.nn.Module):
+    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64):
+        super().__init__()
+
+        # Node projection
+        self.lin_in = Linear(node_dim, hidden_dim)
+
+        # Edge projection (CRUCIAL)
+        self.edge_proj = Linear(edge_dim, hidden_dim)
+
+        # Update MLP used by GINE
+        nn_update = Sequential(
+            Linear(hidden_dim, hidden_dim),
+            ReLU(),
+            Linear(hidden_dim, hidden_dim)
+        )
+
+        self.conv1 = GINEConv(nn_update)
+        self.conv2 = GINEConv(nn_update)
+    # end init
+
+    def forward(self, data):
+        x = self.lin_in(data.x)
+
+        # project edges to same dim as nodes
+        edge_attr = self.edge_proj(data.edge_attr)
+
+        x = self.conv1(x, data.edge_index, edge_attr)
+        x = torch.relu(x)
+        x = self.conv2(x, data.edge_index, edge_attr)
+
+        return x
+    # end forward
+# end HarmonicGraphEncoder
+
+class BilinearDecoder(torch.nn.Module):
+    def __init__(self, hidden_dim=64):
+        super().__init__()
+        self.M = torch.nn.Parameter(torch.randn(hidden_dim, hidden_dim))
+    # end init
+
+    def forward(self, node_emb):
+        # node_emb: [N, H]
+        logits = node_emb @ self.M @ node_emb.T
+        probs = torch.softmax(logits, dim=1)
+        return probs
+    # end forward
+# end BilinearDecoder
+
+class HarmonicGAE(torch.nn.Module):
+    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64):
+        super().__init__()
+        self.encoder = HarmonicGraphEncoder(node_dim, edge_dim, hidden_dim)
+        self.decoder = BilinearDecoder(hidden_dim)
+    # end init
+
+    def forward(self, data):
+        node_emb = self.encoder(data)
+        probs = self.decoder(node_emb)
+        return probs
+    # end forward
+# end HarmonicGAE
+
+def edge_index_to_dense(data):
+    N = data.x.size(0)
+    W = torch.zeros((N, N), device=data.x.device)
+
+    for i in range(data.edge_index.size(1)):
+        src = data.edge_index[0, i]
+        dst = data.edge_index[1, i]
+        W[src, dst] = data.edge_weight[i]
+
+    # return torch.softmax(W, dim=1)
+    return W
+# end edge_index_to_dense
+
+'''
+pred = model(data)
+target = edge_index_to_dense(data)
+
+loss = F.mse_loss(pred, target)
+'''
