@@ -1501,6 +1501,7 @@ def make_weighted_graph_from_chords(chord_ids_sequence, chord_id_features, use_p
 
     return Data(
         x=x,
+        node_ids={v:k for k,v in id_to_idx.items()},  # mapping back to chord ids
         edge_index=edge_index,
         edge_weight=edge_weight,
         edge_attr=edge_attr
@@ -1527,10 +1528,10 @@ def remove_out_of_dict_ids(lst, d):
     return result
 # end remove_out_of_dict_ids
 
-def make_graph_from_input_ids(chord_id_duplicates_sequence, chord_id_features):
+def make_graph_from_input_ids(chord_id_duplicates_sequence, chord_id_features, use_probabilities=True):
     chord_ids_sequence = remove_consecutive_duplicates( chord_id_duplicates_sequence )
     chord_ids_sequence = remove_out_of_dict_ids( chord_ids_sequence, chord_id_features )
-    return make_weighted_graph_from_chords(chord_ids_sequence, chord_id_features, use_probabilities=True)
+    return make_weighted_graph_from_chords(chord_ids_sequence, chord_id_features, use_probabilities=use_probabilities)
     # return make_graph_from_chords(chord_ids_sequence, chord_id_features)
 # end make_graph_from_input_ids
 
