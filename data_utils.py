@@ -109,6 +109,8 @@ from models_graph import remove_consecutive_duplicates, remove_out_of_dict_ids
 #     return full_pianoroll, raw_chords
 # #  end extract_lead_sheet_info
 
+
+
 def compute_normalized_token_entropy(logits, target_ids, pad_token_id=None):
     """
     Computes Expected Bits per Token (Token Entropy) for a batch.
@@ -264,10 +266,11 @@ class LSTMHarmonyDataset(Dataset):
 # end LSTMHarmonyDataset
 
 class TransitionMatrixDataset(Dataset):
-    def __init__(self, base_dataset, chord_id_features):
+    def __init__(self, base_dataset, chord_id_features, tokenizer):
         self.base_dataset = base_dataset
         self.chord_id_features = chord_id_features
         self.D = len(chord_id_features)
+        self.tokenizer = tokenizer
 
     def __len__(self):
         return len(self.base_dataset)
@@ -282,8 +285,8 @@ class TransitionMatrixDataset(Dataset):
         matrix = torch.zeros(self.D, self.D)
 
         for i in range(len(chord_ids) - 1):
-            a = chord_ids[i]
-            b = chord_ids[i + 1]
+            a = chord_ids[i] - self.tokenizer.FIST_CHORD_TOKEN_INDEX
+            b = chord_ids[i + 1] - self.tokenizer.FIST_CHORD_TOKEN_INDEX
             matrix[a, b] += 1
 
         # Optional: normalize rows
@@ -362,7 +365,7 @@ class LSTMPaddingCollator:
         sequences = [item["chord_sequence"] for item in batch]
 
         # Convert to tensors if not already
-        sequences = [torch.tensor(seq, dtype=torch.long) for seq in sequences]
+        # sequences = [torch.tensor(seq, dtype=torch.long) for seq in sequences]
 
         # Pad
         padded = pad_sequence(

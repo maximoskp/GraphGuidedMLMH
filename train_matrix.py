@@ -20,32 +20,28 @@ val_dataset = CSGridMLMDataset(val_dir, tokenizer, frontloading=True, name_suffi
 chord_features = GridMLM_tokenizers.CHORD_FEATURES
 chord_id_features = {tokenizer.vocab[k]: v for k, v in chord_features.items()}
 
-lstm_train_dataset = LSTMHarmonyDataset(train_dataset, chord_id_features)
-lstm_val_dataset = LSTMHarmonyDataset(val_dataset, chord_id_features)
+matrix_train_dataset = TransitionMatrixDataset(train_dataset, chord_id_features, tokenizer)
+matrix_val_dataset = TransitionMatrixDataset(val_dataset, chord_id_features, tokenizer)
 
-collator = LSTMPaddingCollator(pad_id=0)
-
-train_loader_lstm = DataLoader(
-    lstm_train_dataset,
+train_loader_matrix = DataLoader(
+    matrix_train_dataset,
     batch_size=32,
-    shuffle=True,
-    collate_fn=collator
+    shuffle=True
 )
-val_loader_lstm = DataLoader(
-    lstm_val_dataset,
+val_loader_matrix = DataLoader(
+    matrix_val_dataset,
     batch_size=32,
-    shuffle=False,
-    collate_fn=collator
+    shuffle=False
 )
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-model_lstm = LSTMHarmonyModel(vocab_size=len(chord_id_features) + tokenizer.FIST_CHORD_TOKEN_INDEX)
-model_lstm.train()
-model_lstm.to(device)
+model_matrix = TransitionMatrixAutoencoder(D=len(chord_id_features))
+model_matrix.train()
+model_matrix.to(device)
 
-optimizer_lstm = torch.optim.AdamW(model_lstm.parameters(), lr=1e-4)
+optimizer_matrix = torch.optim.AdamW(model_matrix.parameters(), lr=1e-4)
 
 os.makedirs('saved_models', exist_ok=True)
 
-train_lstm(model_lstm, train_loader_lstm, val_loader_lstm, optimizer_lstm, device, save_path='saved_models/lstm.pt', num_epochs=200)
+train_matrix_ae(model_matrix, train_loader_matrix, val_loader_matrix, optimizer_matrix, device, save_path='saved_models/matrix.pt', num_epochs=200)

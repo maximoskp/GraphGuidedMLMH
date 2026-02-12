@@ -61,6 +61,7 @@ class CSGridMLMTokenizer(PreTrainedTokenizer):
         self.csl_token = '<s>'
         self.mask_token = '<mask>'
         self.bar_token = '<bar>'
+        self.FIST_CHORD_TOKEN_INDEX = 7
         self.quantization = quantization
         self.fixed_length = fixed_length
         self.intertwine_bar_info = intertwine_bar_info
