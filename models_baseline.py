@@ -1,7 +1,8 @@
+from pyexpat import model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from tqdm import tqdm
 
 class LSTMHarmonyModel(nn.Module):
     def __init__(self, vocab_size, emb_dim=128, hidden_dim=256, num_layers=2, dropout=0.2):
@@ -25,30 +26,63 @@ class LSTMHarmonyModel(nn.Module):
         return logits, hidden
 # end LSTMHarmonyModel
 
-def train_lstm(model, dataloader, optimizer, device):
-    model.train()
-    total_loss = 0
+def train_lstm(
+        model,
+        trainloader,
+        valloader,
+        optimizer,
+        device,
+        save_path,
+        num_epochs=10):
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
+    best_val_loss = float('inf')
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0
+        batch_num = 0
+        with tqdm(trainloader, unit='batch', position=0) as tepoch:
+            tepoch.set_description(f'Epoch {epoch}| trn')
+            for batch in tepoch:
+                input_ids = batch["input_ids"].to(device)
+                target_ids = batch["target_ids"].to(device)
+                # attention_mask = batch["attention_mask"].to(device)
+                optimizer.zero_grad()
+                logits, _ = model(input_ids)
+                loss = criterion(
+                    logits.reshape(-1, logits.size(-1)),
+                    target_ids.reshape(-1)
+                )
+                loss.backward()
+                optimizer.step()
 
-    for batch in dataloader:
-        seq = batch["chord_sequence"].to(device)  # (B, T)
-
-        input_seq = seq[:, :-1]
-        target_seq = seq[:, 1:]
-
-        optimizer.zero_grad()
-
-        logits, _ = model(input_seq)
-        loss = F.cross_entropy(
-            logits.reshape(-1, logits.size(-1)),
-            target_seq.reshape(-1)
-        )
-
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-
-    return total_loss / len(dataloader)
+                batch_num += 1
+                running_loss += loss.item()
+                train_loss = running_loss/batch_num
+                tepoch.set_postfix(loss=train_loss)
+        # validation loop
+        model.eval()
+        with torch.no_grad():
+            running_loss = 0
+            batch_num = 0
+            with tqdm(valloader, unit='batch', position=0) as tepoch:
+                tepoch.set_description(f'Epoch {epoch}| val')
+                for batch in tepoch:
+                    input_ids = batch["input_ids"].to(device)
+                    target_ids = batch["target_ids"].to(device)
+                    # attention_mask = batch["attention_mask"].to(device)
+                    logits, _ = model(input_ids)
+                    loss = criterion(
+                        logits.reshape(-1, logits.size(-1)),
+                        target_ids.reshape(-1)
+                    )
+                    batch_num += 1
+                    running_loss += loss.item()
+                    val_loss = running_loss/batch_num
+                    tepoch.set_postfix(loss=val_loss)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            print('saving...')
+            torch.save(model.state_dict(), save_path)
 # end train_lstm
 
 class TransitionMatrixAutoencoder(nn.Module):
@@ -83,29 +117,60 @@ class TransitionMatrixAutoencoder(nn.Module):
         return recon, z
 # end TransitionMatrixAutoencoder
 
-def train_matrix_ae(model, dataloader, optimizer, device):
-    model.train()
-    total_loss = 0
+def train_matrix_ae(
+        model,
+        trainloader,
+        valloader,
+        optimizer,
+        device,
+        save_path,
+        num_epochs=10):
+    best_val_loss = float('inf')
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0
+        batch_num = 0
+        with tqdm(trainloader, unit='batch', position=0) as tepoch:
+            tepoch.set_description(f'Epoch {epoch}| trn')
+            for batch in tepoch:
+                matrix = batch["transition_matrix"].to(device)
+                optimizer.zero_grad()
+                recon, _ = model(matrix)
+                loss = F.kl_div(
+                    F.log_softmax(recon, dim=-1),
+                    matrix,
+                    reduction='batchmean'
+                )
+                loss.backward()
+                optimizer.step()
 
-    for batch in dataloader:
-        matrix = batch["transition_matrix"].to(device)
-
-        optimizer.zero_grad()
-        recon, _ = model(matrix)
-
-        # loss = F.mse_loss(recon, matrix)
-        loss = F.kl_div(
-            F.log_softmax(recon, dim=-1),
-            matrix,
-            reduction='batchmean'
-        )
-
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-
-    return total_loss / len(dataloader)
+                batch_num += 1
+                running_loss += loss.item()
+                train_loss = running_loss/batch_num
+                tepoch.set_postfix(loss=train_loss)
+        # validation loop
+        model.eval()
+        with torch.no_grad():
+            running_loss = 0
+            batch_num = 0
+            with tqdm(valloader, unit='batch', position=0) as tepoch:
+                tepoch.set_description(f'Epoch {epoch}| val')
+                for batch in tepoch:
+                    matrix = batch["transition_matrix"].to(device)
+                    recon, _ = model(matrix)
+                    loss = F.kl_div(
+                        F.log_softmax(recon, dim=-1),
+                        matrix,
+                        reduction='batchmean'
+                    )
+                    batch_num += 1
+                    running_loss += loss.item()
+                    val_loss = running_loss/batch_num
+                    tepoch.set_postfix(loss=val_loss)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            print('saving...')
+            torch.save(model.state_dict(), save_path)
 # end train_matrix_ae
 
 
@@ -132,27 +197,57 @@ class BagOfTransitionsAutoencoder(nn.Module):
         return recon_logits, z
 # end BagOfTransitionsAutoencoder
 
-def train_bow_ae(model, dataloader, optimizer, device):
-    model.train()
-    total_loss = 0
+def train_bot_ae(model,
+            trainloader,
+            valloader,
+            optimizer,
+            device,
+            save_path,
+            num_epochs=10):
+    best_val_loss = float('inf')
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0
+        batch_num = 0
+        with tqdm(trainloader, unit='batch', position=0) as tepoch:
+            tepoch.set_description(f'Epoch {epoch}| trn')
+            for batch in tepoch:
+                bow = batch["bag_of_transitions"].to(device)
+                optimizer.zero_grad()
+                recon_logits, _ = model(bow)
+                loss = F.kl_div(
+                    F.log_softmax(recon_logits, dim=-1),
+                    bow,
+                    reduction='batchmean'
+                )
+                loss.backward()
+                optimizer.step()
 
-    for batch in dataloader:
-        bow = batch["bag_of_transitions"].to(device)
-
-        optimizer.zero_grad()
-
-        recon_logits, _ = model(bow)
-
-        loss = F.kl_div(
-            F.log_softmax(recon_logits, dim=-1),
-            bow,
-            reduction='batchmean'
-        )
-
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-
-    return total_loss / len(dataloader)
+                batch_num += 1
+                running_loss += loss.item()
+                train_loss = running_loss/batch_num
+                tepoch.set_postfix(loss=train_loss)
+        # validation loop
+        model.eval()
+        with torch.no_grad():
+            running_loss = 0
+            batch_num = 0
+            with tqdm(valloader, unit='batch', position=0) as tepoch:
+                tepoch.set_description(f'Epoch {epoch}| val')
+                for batch in tepoch:
+                    bow = batch["bag_of_transitions"].to(device)
+                    recon_logits, _ = model(bow)
+                    loss = F.kl_div(
+                        F.log_softmax(recon_logits, dim=-1),
+                        bow,
+                        reduction='batchmean'
+                    )
+                    batch_num += 1
+                    running_loss += loss.item()
+                    val_loss = running_loss/batch_num
+                    tepoch.set_postfix(loss=val_loss)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            print('saving...')
+            torch.save(model.state_dict(), save_path)
 # end train_bow_ae

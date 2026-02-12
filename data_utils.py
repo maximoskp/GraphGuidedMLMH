@@ -1,4 +1,5 @@
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from GridMLM_tokenizers import CSGridMLMTokenizer
 import os
@@ -350,3 +351,55 @@ class BagOfTransitionsDataset(Dataset):
             "bag_of_transitions": bow
         }
 # end BagOfTransitionsDataset
+
+class LSTMPaddingCollator:
+    def __init__(self, pad_id=0):
+        self.pad_id = pad_id
+
+    def __call__(self, batch):
+        # batch: list of dicts with "chord_sequence"
+
+        sequences = [item["chord_sequence"] for item in batch]
+
+        # Convert to tensors if not already
+        sequences = [torch.tensor(seq, dtype=torch.long) for seq in sequences]
+
+        # Pad
+        padded = pad_sequence(
+            sequences,
+            batch_first=True,
+            padding_value=self.pad_id
+        )
+
+        # Build input and target (shifted)
+        input_ids = padded[:, :-1]
+        target_ids = padded[:, 1:]
+
+        # Attention mask (1 where not pad)
+        attention_mask = (input_ids != self.pad_id).long()
+
+        return {
+            "input_ids": input_ids,
+            "target_ids": target_ids,
+            "attention_mask": attention_mask
+        }
+# end LSTMPaddingCollator
+
+def compute_masked_loss(logits, targets, attention_mask):
+    # logits: (B, T, V)
+    # targets: (B, T)
+    # mask: (B, T)
+
+    loss = torch.nn.functional.cross_entropy(
+        logits.reshape(-1, logits.size(-1)),
+        targets.reshape(-1),
+        reduction='none'
+    )
+
+    loss = loss.view(targets.size())
+
+    # Apply mask
+    loss = loss * attention_mask
+
+    return loss.sum() / attention_mask.sum()
+# end compute_masked_loss
