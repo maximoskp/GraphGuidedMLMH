@@ -7,6 +7,8 @@ from music21 import converter, note, chord, harmony, meter, stream
 import torch.nn.functional as F
 from tqdm import tqdm
 import pickle
+from collections import Counter
+from models_graph import remove_consecutive_duplicates, remove_out_of_dict_ids
 
 # def extract_lead_sheet_info(xml_path, quantization='16th', fixed_length=None):
 #     # Load the score and flatten
@@ -236,3 +238,115 @@ def CSGridMLM_collate_fn(batch):
         'pianoroll': torch.stack(pianorolls),  # shape: (B, 140, T)
     }
 # end CSGridMLM_collate_fn
+
+# =================== BASELINE DATASETS ==========================
+
+class LSTMHarmonyDataset(Dataset):
+    def __init__(self, base_dataset, chord_id_features):
+        self.base_dataset = base_dataset
+        self.chord_id_features = chord_id_features
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        item = self.base_dataset[idx]
+
+        chord_ids = item['harmony_ids']
+
+        chord_ids = remove_consecutive_duplicates(chord_ids)
+        chord_ids = remove_out_of_dict_ids(chord_ids, self.chord_id_features)
+
+        return {
+            "chord_sequence": torch.tensor(chord_ids, dtype=torch.long)
+        }
+# end LSTMHarmonyDataset
+
+class TransitionMatrixDataset(Dataset):
+    def __init__(self, base_dataset, chord_id_features):
+        self.base_dataset = base_dataset
+        self.chord_id_features = chord_id_features
+        self.D = len(chord_id_features)
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        item = self.base_dataset[idx]
+
+        chord_ids = item['harmony_ids']
+        chord_ids = remove_consecutive_duplicates(chord_ids)
+        chord_ids = remove_out_of_dict_ids(chord_ids, self.chord_id_features)
+
+        matrix = torch.zeros(self.D, self.D)
+
+        for i in range(len(chord_ids) - 1):
+            a = chord_ids[i]
+            b = chord_ids[i + 1]
+            matrix[a, b] += 1
+
+        # Optional: normalize rows
+        row_sums = matrix.sum(dim=1, keepdim=True)
+        matrix = torch.where(row_sums > 0, matrix / row_sums, matrix)
+
+        return {
+            "transition_matrix": matrix
+        }
+# end TransitionMatrixDataset
+
+def build_transition_vocab(dataset, chord_id_features, save_path=None):
+    counter = Counter()
+
+    for i in tqdm(range(len(dataset))):
+        item = dataset[i]
+        chord_ids = item['harmony_ids']
+
+        chord_ids = remove_consecutive_duplicates(chord_ids)
+        chord_ids = remove_out_of_dict_ids(chord_ids, chord_id_features)
+
+        for j in range(len(chord_ids) - 1):
+            transition = (chord_ids[j], chord_ids[j+1])
+            counter[transition] += 1
+    print('Making vocab')
+    vocab = {t: idx for idx, t in enumerate(counter.keys())}
+    print('vocab size: ', len(vocab))
+
+    if save_path is not None:
+        with open(save_path, "wb") as f:
+            pickle.dump(vocab, f)
+
+    return vocab
+# end build_transition_vocab
+
+class BagOfTransitionsDataset(Dataset):
+    def __init__(self, base_dataset, chord_id_features, transition_vocab):
+        self.base_dataset = base_dataset
+        self.chord_id_features = chord_id_features
+        self.transition_vocab = transition_vocab
+        self.V = len(transition_vocab)
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        item = self.base_dataset[idx]
+
+        chord_ids = item['harmony_ids']
+        chord_ids = remove_consecutive_duplicates(chord_ids)
+        chord_ids = remove_out_of_dict_ids(chord_ids, self.chord_id_features)
+
+        bow = torch.zeros(self.V)
+
+        for i in range(len(chord_ids) - 1):
+            t = (chord_ids[i], chord_ids[i+1])
+            if t in self.transition_vocab:
+                bow[self.transition_vocab[t]] += 1
+
+        # Optional normalization
+        if bow.sum() > 0:
+            bow = bow / bow.sum()
+
+        return {
+            "bag_of_transitions": bow
+        }
+# end BagOfTransitionsDataset

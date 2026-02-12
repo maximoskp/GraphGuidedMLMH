@@ -1,0 +1,3 @@
+BoT vocab size: 3870
+
+Run make_BoT_vocab.py first.
