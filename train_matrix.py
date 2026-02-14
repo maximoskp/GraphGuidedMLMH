@@ -9,8 +9,10 @@ from models_baseline import LSTMHarmonyModel, TransitionMatrixAutoencoder, BagOf
 from models_baseline import train_lstm, train_matrix_ae, train_bot_ae
 import os
 
-train_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_train'
-val_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_test'
+# train_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_train'
+# val_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_test'
+train_dir = '/mnt/ssd2/maximos/data/hooktheory_midi_hr/CA_train'
+val_dir = '/mnt/ssd2/maximos/data/hooktheory_midi_hr/CA_test'
 
 tokenizer = CSGridMLMTokenizer(fixed_length=256)
 

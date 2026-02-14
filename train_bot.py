@@ -14,8 +14,10 @@ BoT_vocab_path = 'data/BoT_vocab.pickle'
 with open(BoT_vocab_path, 'rb') as f:
     BoT_vocab = pickle.load(f)
 
-train_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_train'
-val_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_test'
+# train_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_train'
+# val_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_test'
+train_dir = '/mnt/ssd2/maximos/data/hooktheory_midi_hr/CA_train'
+val_dir = '/mnt/ssd2/maximos/data/hooktheory_midi_hr/CA_test'
 
 tokenizer = CSGridMLMTokenizer(fixed_length=256)
 
