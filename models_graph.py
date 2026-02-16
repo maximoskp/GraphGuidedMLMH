@@ -122,7 +122,6 @@ def make_weighted_graph_from_chords(chord_ids_sequence, chord_id_features, use_p
 
     return Data(
         x=x,
-        # node_ids={v:k for k,v in id_to_idx.items()},  # mapping back to chord ids
         node_ids=torch.tensor( unique_ids, dtype=torch.long ),  # mapping back to chord ids
         edge_index=edge_index,
         edge_weight=edge_weight,
@@ -204,7 +203,9 @@ class HarmonicGraphEncoder(torch.nn.Module):
         x = torch.relu(x)
         x = self.conv2(x, data.edge_index, edge_attr)
 
-        return x
+        pooled = torch.sum(x, axis=0).unsqueeze(0)
+
+        return x, pooled
     # end forward
 # end HarmonicGraphEncoder
 
@@ -230,9 +231,9 @@ class HarmonicGAE(torch.nn.Module):
     # end init
 
     def forward(self, data):
-        node_emb = self.encoder(data)
+        node_emb, enc_pooled = self.encoder(data)
         probs = self.decoder(node_emb)
-        return probs
+        return probs, enc_pooled
     # end forward
 # end HarmonicGAE
 
