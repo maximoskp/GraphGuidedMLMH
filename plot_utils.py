@@ -5,10 +5,12 @@ from GridMLM_tokenizers import CSGridMLMTokenizer
 from data_utils import CSGridMLMDataset
 import pickle
 from models_baseline import LSTMHarmonyModel, TransitionMatrixAutoencoder, BagOfTransitionsAutoencoder
+from models_graph import HarmonicGAE, make_graph_from_input_ids
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
+from tqdm import tqdm
 
 BoT_vocab_path = 'data/BoT_vocab.pickle'
 
@@ -81,3 +83,38 @@ def get_bot_embeddings_for_data_path(data_path):
     bot_np = np.array(bot_embeddings)
     return bot_np
 # end get_bot_embeddings_for_data_path
+
+def get_graph_embeddings_for_data_path(data_path):
+    tokenizer = CSGridMLMTokenizer(fixed_length=256)
+
+    val_dataset = CSGridMLMDataset(data_path, tokenizer, frontloading=True, name_suffix='Q4_L80_bar_PC')
+
+    chord_features = GridMLM_tokenizers.CHORD_FEATURES
+    chord_id_features = {tokenizer.vocab[k]: v for k, v in chord_features.items()}
+
+    graph_val_dataset = []
+
+    for d in tqdm(val_dataset):
+        chord_id_duplicates_sequence = d['harmony_ids']
+        g = make_graph_from_input_ids(
+                chord_id_duplicates_sequence,
+                chord_id_features,
+                use_probabilities=True
+            )
+        if g is not None:
+            graph_val_dataset.append( g )
+        else:
+            print('Short sequence: ', chord_id_duplicates_sequence)
+
+    model_graph = HarmonicGAE(hidden_dim=64)
+    model_graph.train()
+
+    graph_embeddings = []
+
+    for d in graph_val_dataset:
+        _, emb = model_graph.encoder(d)
+        graph_embeddings.append(emb.detach().numpy)
+    
+    graph_np = np.array(graph_embeddings)
+    return graph_np
+# end get_graph_embeddings_for_data_path

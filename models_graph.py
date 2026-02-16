@@ -6,6 +6,7 @@ from torch_geometric.nn import GINEConv
 from collections import defaultdict
 import math
 from copy import deepcopy
+from tqdm import tqdm
 
 ### ======================= GRAPH-GUIDED MODELS =======================
 # -----------------------------
@@ -250,9 +251,75 @@ def edge_index_to_dense(data):
     return W
 # end edge_index_to_dense
 
-'''
-pred = model(data)
-target = edge_index_to_dense(data)
+def train_gae(model,
+            trainloader,
+            valloader,
+            optimizer,
+            device,
+            save_path,
+            num_epochs=10):
+    loss_fn = torch.nn.KLDivLoss(reduction="batchmean")
+    best_val_loss = float('inf')
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0
+        batch_num = 0
+        with tqdm(trainloader, unit='batch', position=0) as tepoch:
+            tepoch.set_description(f'Epoch {epoch}| trn')
+            for batch in tepoch:
+                node_emb, _ = model.encoder(batch)  # y = [N_total, N_total]
+                batch_vec = batch.batch  # [N_total]
+                
+                loss = 0.0
+                
+                for g_id in range(batch.num_graphs):
+                    node_mask = (batch_vec == g_id)
+                    z = node_emb[node_mask]
+                    
+                    probs = model.decoder(z)
+                    
+                    # Get target
+                    g = batch.get_example(g_id)  # or batch.to_data_list()[g_id]
+                    target = edge_index_to_dense(g)
+                    
+                    loss += loss_fn(torch.log(probs + 1e-9), target)
+                loss.backward()
+                optimizer.step()
 
-loss = F.mse_loss(pred, target)
-'''
+                batch_num += 1
+                running_loss += loss.item()
+                train_loss = running_loss/batch_num
+                tepoch.set_postfix(loss=train_loss)
+        # validation loop
+        model.eval()
+        with torch.no_grad():
+            running_loss = 0
+            batch_num = 0
+            with tqdm(valloader, unit='batch', position=0) as tepoch:
+                tepoch.set_description(f'Epoch {epoch}| val')
+                for batch in tepoch:
+                    node_emb, _ = model.encoder(batch)  # y = [N_total, N_total]
+                    batch_vec = batch.batch  # [N_total]
+                    
+                    loss = 0.0
+                    
+                    for g_id in range(batch.num_graphs):
+                        node_mask = (batch_vec == g_id)
+                        z = node_emb[node_mask]
+                        
+                        probs = model.decoder(z)
+                        
+                        # Get target
+                        g = batch.get_example(g_id)  # or batch.to_data_list()[g_id]
+                        target = edge_index_to_dense(g)
+                        
+                        loss += loss_fn(torch.log(probs + 1e-9), target)
+                    batch_num += 1
+                    running_loss += loss.item()
+                    val_loss = running_loss/batch_num
+                    tepoch.set_postfix(loss=val_loss)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            print('saving...')
+            torch.save(model.state_dict(), save_path)
+# end train_bow_ae
