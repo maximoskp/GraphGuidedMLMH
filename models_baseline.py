@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 class LSTMHarmonyModel(nn.Module):
-    def __init__(self, vocab_size, emb_dim=128, hidden_dim=256, num_layers=2, dropout=0.2):
+    def __init__(self, vocab_size, emb_dim=128, hidden_dim=64, num_layers=2, dropout=0.2):
         super().__init__()
 
         self.embedding = nn.Embedding(vocab_size, emb_dim)
@@ -86,21 +86,21 @@ def train_lstm(
 # end train_lstm
 
 class TransitionMatrixAutoencoder(nn.Module):
-    def __init__(self, D, latent_dim=256):
+    def __init__(self, D, latent_dim=64):
         super().__init__()
 
         input_dim = D * D
 
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 1024),
+            nn.Linear(input_dim, 128),
             nn.ReLU(),
-            nn.Linear(1024, latent_dim)
+            nn.Linear(128, latent_dim)
         )
 
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 1024),
+            nn.Linear(latent_dim, 128),
             nn.ReLU(),
-            nn.Linear(1024, input_dim)
+            nn.Linear(128, input_dim)
         )
 
         self.D = D
@@ -175,19 +175,19 @@ def train_matrix_ae(
 
 
 class BagOfTransitionsAutoencoder(nn.Module):
-    def __init__(self, vocab_size, latent_dim=128):
+    def __init__(self, vocab_size, latent_dim=64):
         super().__init__()
 
         self.encoder = nn.Sequential(
-            nn.Linear(vocab_size, 512),
+            nn.Linear(vocab_size, 128),
             nn.ReLU(),
-            nn.Linear(512, latent_dim)
+            nn.Linear(128, latent_dim)
         )
 
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 512),
+            nn.Linear(latent_dim, 128),
             nn.ReLU(),
-            nn.Linear(512, vocab_size)
+            nn.Linear(128, vocab_size)
         )
 
     def forward(self, bow):

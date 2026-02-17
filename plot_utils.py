@@ -34,8 +34,10 @@ def get_lstm_embeddings_for_data_path(data_path):
 
     lstm_embeddings = []
     for d in lstm_val_dataset:
-        model_out = model_lstm(d['chord_sequence'].to(device))
-        lstm_embeddings.append( model_out[1][0][1,:].detach().cpu() )
+        tmp_seq = d['chord_sequence'].to(device)
+        if len(tmp_seq) > 1:
+            model_out = model_lstm(tmp_seq)
+            lstm_embeddings.append( model_out[1][0][1,:].detach().cpu() )
     lstm_np = np.array(lstm_embeddings)
     return lstm_np
 # end get_lstm_embeddings_for_data_path
@@ -56,8 +58,10 @@ def get_matrix_embeddings_for_data_path(data_path):
 
     matrix_embeddings = []
     for d in matrix_val_dataset:
-        model_out = model_matrix(d['transition_matrix'].to(device).unsqueeze(0))
-        matrix_embeddings.append( model_out[1][0].detach().cpu() )
+        tmp_matrix = d['transition_matrix'].to(device).unsqueeze(0)
+        if tmp_matrix.sum() > 0:
+            model_out = model_matrix(tmp_matrix)
+            matrix_embeddings.append( model_out[1][0].detach().cpu() )
     matrix_np = np.array(matrix_embeddings)
     return matrix_np
 # end get_matrix_embeddings_for_data_path
@@ -78,8 +82,10 @@ def get_bot_embeddings_for_data_path(data_path):
 
     bot_embeddings = []
     for d in bot_val_dataset:
-        model_out = model_bot(d['bag_of_transitions'].to(device).unsqueeze(0))
-        bot_embeddings.append( model_out[1][0].detach().cpu() )
+        tmp_bot = d['bag_of_transitions'].to(device).unsqueeze(0)
+        if tmp_bot.sum() > 0:
+            model_out = model_bot(tmp_bot)
+            bot_embeddings.append( model_out[1][0].detach().cpu() )
     bot_np = np.array(bot_embeddings)
     return bot_np
 # end get_bot_embeddings_for_data_path
@@ -113,7 +119,7 @@ def get_graph_embeddings_for_data_path(data_path):
 
     for d in graph_val_dataset:
         _, emb = model_graph.encoder(d)
-        graph_embeddings.append(emb.detach().numpy)
+        graph_embeddings.append(emb.detach().numpy().squeeze())
     
     graph_np = np.array(graph_embeddings)
     return graph_np
