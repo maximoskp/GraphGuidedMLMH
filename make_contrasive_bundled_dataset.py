@@ -83,8 +83,8 @@ def get_matrix_embeddings_for_sequence(mat):
     model_out = model_matrix(mat)
     return model_out[1][0].detach().cpu()
 # end matrix
-def get_bot_embeddings_for_sequence(mat):
-    model_out = model_bot(mat)
+def get_bot_embeddings_for_sequence(bot):
+    model_out = model_bot(bot)
     return model_out[1][0].detach().cpu()
 # end bot
 def get_SE_embeddings_for_sequence(pianoroll, harmony_ids):
@@ -144,7 +144,7 @@ def make_contrastive_bundle_dataset_for_dataset(dataset):
             if bow.sum() > 0:
                 bow = bow / bow.sum()
             new_data['bot'] = bow
-            bot_embeddings = get_bot_embeddings_for_sequence(bow)
+            bot_embeddings = get_bot_embeddings_for_sequence(bow.unsqueeze(0))
             new_data['bot_embeddings'] = bot_embeddings
             # graph
             g = make_graph_from_input_ids(
@@ -190,12 +190,15 @@ def main():
         full_dirs.append(os.path.join(parent_dir_idioms, d))
         names.append(d)
 
+    os.makedirs('data', exist_ok=True)
+    os.makedirs('data/contrastive_dataset', exist_ok=True)
+
     for d, n in zip(full_dirs, names):
         print(f'running for {n} in path: {d}')
         train_dataset = CSGridMLMDataset(d, tokenizer, frontloading=True, name_suffix='Q4_L80_bar_PC')
         bundled = make_contrastive_bundle_dataset_for_dataset(train_dataset)
         print('saving...')
-        with open(f'data/{n}.pickle', 'wb') as f:
+        with open(f'data/contrastive_dataset/{n}.pickle', 'wb') as f:
             pickle.dump(bundled, f)
 # end main
 
