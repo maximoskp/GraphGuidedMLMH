@@ -1,6 +1,6 @@
 import GridMLM_tokenizers
 from GridMLM_tokenizers import CSGridMLMTokenizer
-from data_utils import CSGridMLMDataset, build_transition_vocab
+from utils.data_utils import CSGridMLMDataset, build_transition_vocab
 import os
 
 train_dir = '/media/maindisk/data/hooktheory_midi_hr/CA_train'

@@ -189,7 +189,7 @@ class TransitionMatrixDataset(Dataset):
             b = chord_ids[i + 1] - self.tokenizer.FIST_CHORD_TOKEN_INDEX
             matrix[a, b] += 1
 
-        # Optional: normalize rows
+        # normalize rows
         row_sums = matrix.sum(dim=1, keepdim=True)
         matrix = torch.where(row_sums > 0, matrix / row_sums, matrix)
 
@@ -279,7 +279,7 @@ class BagOfTransitionsDataset(Dataset):
                 idx = self.find_most_similar_transition(t)
                 bow[idx] += 1
 
-        # Optional normalization
+        # normalization
         if bow.sum() > 0:
             bow = bow / bow.sum()
 

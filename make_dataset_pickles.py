@@ -2,7 +2,14 @@ from data_utils import CSGridMLMDataset
 from GridMLM_tokenizers import CSGridMLMTokenizer
 import os
 
-tokenizer = CSGridMLMTokenizer(fixed_length=256)
+tokenizer = CSGridMLMTokenizer(
+    fixed_length=80,
+    quantization='4th',
+    intertwine_bar_info=True,
+    trim_start=False,
+    use_pc_roll=True,
+    use_full_range_melody=False
+)
 
 root_path = '/mnt/ssd2/maximos/data/coinvent_midi'
 

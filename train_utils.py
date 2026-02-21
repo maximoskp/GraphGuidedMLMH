@@ -2,7 +2,7 @@ import torch
 from torcheval.metrics.text import Perplexity
 import random
 from tqdm import tqdm
-from data_utils import compute_normalized_token_entropy
+from utils.data_utils import compute_normalized_token_entropy
 import random
 import csv
 import numpy as np
