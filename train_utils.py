@@ -2,12 +2,13 @@ import torch
 from torcheval.metrics.text import Perplexity
 import random
 from tqdm import tqdm
-from utils.data_utils import compute_normalized_token_entropy
+from data_utils import compute_normalized_token_entropy
 import random
 import csv
 import numpy as np
 import os
 from transformers import get_cosine_schedule_with_warmup
+from models import contrastive_loss
 
 perplexity_metric = Perplexity(ignore_index=-100)
 
@@ -646,3 +647,87 @@ def train_with_curriculum(
         # end with tqdm
     # end for epoch
 # end train_with_curriculum
+
+def train_contrastive(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        results_path,
+        save_path,
+        epochs,
+        device
+    ):
+
+    # device = model.device
+    best_val_loss = np.inf
+
+    # save results and model
+    print('results_path:', results_path)
+    if results_path is not None:
+        result_fields = ['epoch', 'train_loss', 'val_loss', 'sav_version']
+        with open( results_path, 'w' ) as f:
+            writer = csv.writer(f)
+            writer.writerow( result_fields )
+
+    for epoch in range(epochs):
+        train_loss = 0
+        running_loss = 0
+        batch_num = 0
+        model.train()
+
+        with tqdm(train_loader, unit='batch', position=0) as tepoch:
+            tepoch.set_description(f'Epoch {epoch}| trn')
+            for source_emb, transformer_emb in tepoch:
+                source_emb = source_emb.to(device)
+                transformer_emb = transformer_emb.to(device)
+
+                z_s, z_t, temp = model(source_emb, transformer_emb)
+                loss = contrastive_loss(z_s, z_t, temp)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                # update loss and accuracy
+                batch_num += 1
+                running_loss += loss.item()
+                train_loss = running_loss/batch_num
+                tepoch.set_postfix(loss=train_loss)
+            # end batch for
+        # end tqdm with
+        # validation loop
+        model.eval()
+        with torch.no_grad():
+            val_loss = 0
+            running_loss = 0
+            batch_num = 0
+            print('validation')
+            with tqdm(val_loader, unit='batch', position=0) as tepoch:
+                tepoch.set_description(f'Epoch {epoch}| val')
+                for source_emb, transformer_emb in tepoch:
+                    source_emb = source_emb.to(device)
+                    transformer_emb = transformer_emb.to(device)
+
+                    z_s, z_t, temp = model(source_emb, transformer_emb)
+                    loss = contrastive_loss(z_s, z_t, temp)
+
+                    # update loss and accuracy
+                    batch_num += 1
+                    running_loss += loss.item()
+                    val_loss = running_loss/batch_num
+                # end batch for
+            # end tqdm with
+        # end no grad with
+        if save_path is not None:
+            if  best_val_loss > val_loss:
+                print('saving!')
+                saving_version += 1
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), save_path)
+        print(f'validation: loss={val_loss}')
+        if results_path is not None:
+            with open( results_path, 'a' ) as f:
+                writer = csv.writer(f)
+                writer.writerow( [epoch, train_loss, val_loss, saving_version] )
+        # end epoch loop

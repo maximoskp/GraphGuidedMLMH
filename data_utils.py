@@ -354,3 +354,31 @@ def compute_masked_loss(logits, targets, attention_mask):
 
     return loss.sum() / attention_mask.sum()
 # end compute_masked_loss
+
+# ========== CONTRASTIVE ===================
+
+from torch.utils.data import Dataset
+
+class ContrastiveDataset(Dataset):
+    def __init__(self, data_list, source_key):
+        '''
+        data_list: list of dictionaries with embeddings of all spaces
+        source_key: string that indicates space to align with transformer
+        '''
+        self.data = data_list
+        self.source_key = source_key
+    # end init
+
+    def __len__(self):
+        return len(self.data)
+    # end len
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+
+        source_emb = torch.tensor(item[self.source_key], dtype=torch.float32)
+        transformer_emb = torch.tensor(item["transformer_embeddings"], dtype=torch.float32)
+
+        return source_emb, transformer_emb
+    # end getitem
+# end ContrastiveDataset

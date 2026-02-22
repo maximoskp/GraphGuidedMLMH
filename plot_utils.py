@@ -52,8 +52,8 @@ def plot_idioms_2(data_tsne, ids_np, caption=''):
         y="tsne_2",
         hue="style",
         palette="hls",
-        s=60,
-        alpha=0.9
+        s=30,
+        alpha=0.7
     )
 
     plt.title(f"t-SNE of {caption} Idiom Embeddings")

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import TransformerEncoderLayer, Sequential, Linear, ReLU
 import math
 from copy import deepcopy
@@ -335,3 +336,58 @@ class SEFiLMModel(nn.Module):
     # end unfreeze_all
 
 # end SEFiLMModel
+
+# =============== CONTRASTIVE =========================
+
+
+class ProjectionHead(nn.Module):
+    def __init__(self, in_dim, out_dim, hidden_dim=256):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, out_dim)
+        )
+    # end init
+
+    def forward(self, x):
+        x = self.net(x)
+        return F.normalize(x, dim=-1)
+    # end forward
+# end ProjectionHead
+
+class ContrastiveSpaceModel(nn.Module):
+    def __init__(self, source_dim, transformer_dim=512, shared_dim=128):
+        super().__init__()
+
+        self.source_proj = ProjectionHead(source_dim, shared_dim)
+        self.transformer_proj = ProjectionHead(transformer_dim, shared_dim)
+
+        # learnable temperature
+        self.log_temp = nn.Parameter(torch.tensor(0.0))
+    # end init
+
+    def forward(self, source_emb, transformer_emb):
+        z_s = self.source_proj(source_emb)
+        z_t = self.transformer_proj(transformer_emb)
+
+        return z_s, z_t, torch.exp(self.log_temp)
+    # end forward
+# end ContrastiveSpaceModel
+
+def contrastive_loss(z_s, z_t, temperature):
+    """
+    z_s: (B, D)
+    z_t: (B, D)
+    """
+    B = z_s.size(0)
+
+    logits = torch.matmul(z_s, z_t.T) / temperature
+
+    labels = torch.arange(B, device=z_s.device)
+
+    loss_s2t = F.cross_entropy(logits, labels)
+    loss_t2s = F.cross_entropy(logits.T, labels)
+
+    return 0.5 * (loss_s2t + loss_t2s)
+# end contrastive_loss
