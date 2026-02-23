@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 import os
 from train_utils import train_contrastive
+from data_utils import ContrastiveCollator
 import argparse
 
 spaces = {'lstm', 'matrix', 'bot', 'graph'}
@@ -59,8 +60,10 @@ def main():
     print(source_name, ' - source_dim: ', source_dim)
     print('transformer', ' - transformer_dim: ', transformer_dim)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    collator = ContrastiveCollator(pad_id=0)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collator)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collator)
 
     if device_name == 'cpu':
         device = torch.device('cpu')
@@ -88,6 +91,7 @@ def main():
             model,
             train_loader,
             val_loader,
+            source_key,
             optimizer,
             results_path,
             save_path,

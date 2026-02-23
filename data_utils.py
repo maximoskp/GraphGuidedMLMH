@@ -382,3 +382,26 @@ class ContrastiveDataset(Dataset):
         return source_emb, transformer_emb
     # end getitem
 # end ContrastiveDataset
+
+class ContrastiveCollator:
+    def __init__(self, pad_id=0):
+        self.pad_id = pad_id
+
+    def __call__(self, batch):
+        # each item[...] should already be a tensor (possibly multi-dimensional)
+        # stack them instead of calling torch.tensor on a list of tensors
+        # which tries to convert each entry to a scalar and fails if it's multi-element.
+        lstm = torch.stack([item["lstm_embeddings"] for item in batch]).to(torch.float32)
+        matrix = torch.stack([item["matrix_embeddings"] for item in batch]).to(torch.float32)
+        bot = torch.stack([item["bot_embeddings"] for item in batch]).to(torch.float32)
+        graph = torch.stack([item["graph_embeddings"] for item in batch]).to(torch.float32)
+        transformer = torch.stack([item["transformer_embeddings"] for item in batch]).to(torch.float32)
+
+        return {
+            "lstm_embeddings": lstm,
+            "matrix_embeddings": matrix,
+            "bot_embeddings": bot,
+            "graph_embeddings": graph,
+            "transformer_embeddings": transformer,
+        }
+# end ContrastiveCollator

@@ -36,31 +36,31 @@ def plot_idioms_1(data_tsne, ids_np):
     plt.show()
 # end plot_idioms_1
 
-def plot_idioms_2(data_tsne, ids_np, caption=''):
+def plot_idioms_2(data_tsne, ids_np, caption='', method=''):
     labels = ids_np.squeeze()
 
     df = pd.DataFrame({
-        "tsne_1": data_tsne[:, 0],
-        "tsne_2": data_tsne[:, 1],
+        f"{method}_1": data_tsne[:, 0],
+        f"{method}_2": data_tsne[:, 1],
         "style": labels
     })
 
     plt.figure(figsize=(8, 6))
     sns.scatterplot(
         data=df,
-        x="tsne_1",
-        y="tsne_2",
+        x=f"{method}_1",
+        y=f"{method}_2",
         hue="style",
         palette="hls",
         s=30,
         alpha=0.7
     )
 
-    plt.title(f"t-SNE of {caption} Idiom Embeddings")
+    plt.title(f"{method} of {caption} Idiom Embeddings")
     plt.legend(title="Style")
     plt.tight_layout()
     os.makedirs("figs", exist_ok=True)
-    plt.savefig(f"figs/tsne_{caption}.png", dpi=300)
+    plt.savefig(f"figs/{method}_{caption}.png", dpi=300)
     plt.show()
 # end plot_idioms_2
 

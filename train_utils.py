@@ -652,6 +652,7 @@ def train_contrastive(
         model,
         train_loader,
         val_loader,
+        source_key,
         optimizer,
         results_path,
         save_path,
@@ -661,6 +662,7 @@ def train_contrastive(
 
     # device = model.device
     best_val_loss = np.inf
+    saving_version = 0
 
     # save results and model
     print('results_path:', results_path)
@@ -678,9 +680,9 @@ def train_contrastive(
 
         with tqdm(train_loader, unit='batch', position=0) as tepoch:
             tepoch.set_description(f'Epoch {epoch}| trn')
-            for source_emb, transformer_emb in tepoch:
-                source_emb = source_emb.to(device)
-                transformer_emb = transformer_emb.to(device)
+            for batch in tepoch:
+                source_emb = batch[source_key].to(device)
+                transformer_emb = batch['transformer_embeddings'].to(device)
 
                 z_s, z_t, temp = model(source_emb, transformer_emb)
                 loss = contrastive_loss(z_s, z_t, temp)
@@ -705,9 +707,9 @@ def train_contrastive(
             print('validation')
             with tqdm(val_loader, unit='batch', position=0) as tepoch:
                 tepoch.set_description(f'Epoch {epoch}| val')
-                for source_emb, transformer_emb in tepoch:
-                    source_emb = source_emb.to(device)
-                    transformer_emb = transformer_emb.to(device)
+                for batch in tepoch:
+                    source_emb = batch[source_key].to(device)
+                    transformer_emb = batch['transformer_embeddings'].to(device)
 
                     z_s, z_t, temp = model(source_emb, transformer_emb)
                     loss = contrastive_loss(z_s, z_t, temp)

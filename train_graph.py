@@ -54,12 +54,22 @@ valloader = DataLoader(graph_val_dataset, batch_size=32, shuffle=False)
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-hidden_dim = 64
+hidden_dim = 128
+encoder_internal_dim = 64
 
-model = HarmonicGAE(hidden_dim=hidden_dim)
+model = HarmonicGAE(hidden_dim=hidden_dim, encoder_internal_dim=encoder_internal_dim)
 
 optimizer_gae = torch.optim.AdamW(model.parameters(), lr=1e-5)
 
 os.makedirs('saved_models', exist_ok=True)
 
-train_gae(model, trainloader, valloader, optimizer_gae, device, save_path='saved_models/gae.pt', num_epochs=200)
+train_gae(
+    model,
+    trainloader,
+    valloader,
+    optimizer_gae,
+    device,
+    save_path='saved_models/gae.pt',
+    num_epochs=200,
+    save_interim=True
+)

@@ -7,6 +7,7 @@ from collections import defaultdict
 import math
 from copy import deepcopy
 from tqdm import tqdm
+import os
 
 ### ======================= GRAPH-GUIDED MODELS =======================
 # -----------------------------
@@ -174,7 +175,7 @@ def make_graph_from_input_ids(chord_id_duplicates_sequence, chord_id_features, u
 # ================ GRAPH models ====================
 
 class HarmonicGraphEncoder(torch.nn.Module):
-    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64):
+    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64, internal_dim=64):
         super().__init__()
 
         # Node projection
@@ -184,14 +185,21 @@ class HarmonicGraphEncoder(torch.nn.Module):
         self.edge_proj = Linear(edge_dim, hidden_dim)
 
         # Update MLP used by GINE
-        nn_update = Sequential(
-            Linear(hidden_dim, hidden_dim),
-            ReLU(),
-            Linear(hidden_dim, hidden_dim)
+        self.conv1 = GINEConv(
+            Sequential(
+                Linear(hidden_dim, internal_dim),
+                ReLU(),
+                Linear(internal_dim, hidden_dim)
+            )
         )
 
-        self.conv1 = GINEConv(nn_update)
-        self.conv2 = GINEConv(nn_update)
+        self.conv2 = GINEConv(
+            Sequential(
+                Linear(hidden_dim, internal_dim),
+                ReLU(),
+                Linear(internal_dim, hidden_dim)
+            )
+        )
     # end init
 
     def forward(self, data):
@@ -225,9 +233,9 @@ class BilinearDecoder(torch.nn.Module):
 # end BilinearDecoder
 
 class HarmonicGAE(torch.nn.Module):
-    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64):
+    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64, encoder_internal_dim=64):
         super().__init__()
-        self.encoder = HarmonicGraphEncoder(node_dim, edge_dim, hidden_dim)
+        self.encoder = HarmonicGraphEncoder(node_dim, edge_dim, hidden_dim, internal_dim=encoder_internal_dim)
         self.decoder = BilinearDecoder(hidden_dim)
     # end init
 
@@ -257,7 +265,8 @@ def train_gae(model,
             optimizer,
             device,
             save_path,
-            num_epochs=10):
+            num_epochs=10,
+            save_interim=False):
     loss_fn = torch.nn.KLDivLoss(reduction="batchmean")
     best_val_loss = float('inf')
     for epoch in range(num_epochs):
@@ -322,4 +331,10 @@ def train_gae(model,
             best_val_loss = val_loss
             print('saving...')
             torch.save(model.state_dict(), save_path)
+        if save_interim:
+            splt = save_path.split('.pt')
+            interim_path = os.path.join(splt[0], f'epoch_{epoch}.pt')
+            os.makedirs(os.path.dirname(interim_path), exist_ok=True)
+            torch.save(model.state_dict(), interim_path)
+    # end epochs
 # end train_bow_ae

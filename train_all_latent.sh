@@ -17,7 +17,7 @@ for script in "${scripts[@]}"; do
     
     # Start a new detached screen and execute commands
     screen -dmS "$screen_name" bash -c "
-        source ~/miniconda3/etc/profile.d/conda.sh;  # Update this path if your conda is located elsewhere
+        source /opt/miniconda3/etc/profile.d/conda.sh;  # Update this path if your conda is located elsewhere
         conda activate $conda_env;
         python $script;
         exec bash
