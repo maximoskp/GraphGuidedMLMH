@@ -1,3 +1,6 @@
 BoT vocab size: 3870
 
 Run make_BoT_vocab.py first.
+
+To make a gif out of a set of images:
+ffmpeg -framerate 60 -pattern_type glob -i '*.png' -r 15 -vf scale=512:-1 ../graph_training.gif

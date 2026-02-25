@@ -36,7 +36,7 @@ def plot_idioms_1(data_tsne, ids_np):
     plt.show()
 # end plot_idioms_1
 
-def plot_idioms_2(data_tsne, ids_np, caption='', method=''):
+def plot_idioms_2(data_tsne, ids_np, subfolder='', caption='', method=''):
     labels = ids_np.squeeze()
 
     df = pd.DataFrame({
@@ -59,8 +59,8 @@ def plot_idioms_2(data_tsne, ids_np, caption='', method=''):
     plt.title(f"{method} of {caption} Idiom Embeddings")
     plt.legend(title="Style")
     plt.tight_layout()
-    os.makedirs("figs", exist_ok=True)
-    plt.savefig(f"figs/{method}_{caption}.png", dpi=300)
+    os.makedirs(f"figs/{subfolder}", exist_ok=True)
+    plt.savefig(f"figs/{subfolder}/{method}_{caption}.png", dpi=300)
     plt.show()
 # end plot_idioms_2
 

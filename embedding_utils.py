@@ -106,7 +106,8 @@ def get_graph_embeddings_for_dataset(loaded_dataset, tokenizer):
         if g is not None:
             graph_val_dataset.append( g )
         else:
-            print('Short sequence: ', chord_id_duplicates_sequence)
+            pass
+            # print('Short sequence: ', chord_id_duplicates_sequence)
 
     model = HarmonicGAE(hidden_dim=64)
     checkpoint = torch.load('saved_models/gae.pt', map_location=device_name)
@@ -168,7 +169,7 @@ def get_graph_saved_version_embeddings_for_dataset(
 
     graph_val_dataset = []
 
-    for d in tqdm(loaded_dataset):
+    for d in loaded_dataset:
         chord_id_duplicates_sequence = d['harmony_ids']
         g = make_graph_from_input_ids(
                 chord_id_duplicates_sequence,
@@ -178,7 +179,8 @@ def get_graph_saved_version_embeddings_for_dataset(
         if g is not None:
             graph_val_dataset.append( g )
         else:
-            print('Short sequence: ', chord_id_duplicates_sequence)
+            pass
+            # print('Short sequence: ', chord_id_duplicates_sequence)
 
     model = HarmonicGAE(hidden_dim=hidden_dim, encoder_internal_dim=encoder_internal_dim)
     checkpoint = torch.load(f'saved_models/gae/epoch_{saved_version}.pt', map_location=device_name)

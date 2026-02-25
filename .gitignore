@@ -1,5 +1,6 @@
 data/
 saved_models/
+gae_training/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
