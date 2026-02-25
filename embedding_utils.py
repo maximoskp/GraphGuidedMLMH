@@ -154,3 +154,43 @@ def get_SE_embeddings_for_dataset(loaded_dataset, tokenizer):
     transformer_np = np.array(transformer_embeddings)
     return transformer_np
 # end get_SE_embeddings_for_data_path
+
+def get_graph_saved_version_embeddings_for_dataset(
+        loaded_dataset,
+        tokenizer,
+        saved_version,
+        hidden_dim=64,
+        encoder_internal_dim=64
+    ):
+
+    chord_features = GridMLM_tokenizers.CHORD_FEATURES
+    chord_id_features = {tokenizer.vocab[k]: v for k, v in chord_features.items()}
+
+    graph_val_dataset = []
+
+    for d in tqdm(loaded_dataset):
+        chord_id_duplicates_sequence = d['harmony_ids']
+        g = make_graph_from_input_ids(
+                chord_id_duplicates_sequence,
+                chord_id_features,
+                use_probabilities=True
+            )
+        if g is not None:
+            graph_val_dataset.append( g )
+        else:
+            print('Short sequence: ', chord_id_duplicates_sequence)
+
+    model = HarmonicGAE(hidden_dim=hidden_dim, encoder_internal_dim=encoder_internal_dim)
+    checkpoint = torch.load(f'saved_models/gae/epoch_{saved_version}.pt', map_location=device_name)
+    model.load_state_dict(checkpoint)
+    model.eval()
+
+    graph_embeddings = []
+
+    for d in graph_val_dataset:
+        _, emb = model.encoder(d)
+        graph_embeddings.append(emb.detach().numpy().squeeze())
+    
+    graph_np = np.array(graph_embeddings)
+    return graph_np
+# end get_graph_embeddings_for_data_path
