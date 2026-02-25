@@ -55,7 +55,7 @@ valloader = DataLoader(graph_val_dataset, batch_size=32, shuffle=False)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 hidden_dim = 128
-encoder_internal_dim = 64
+encoder_internal_dim = 128
 
 model = HarmonicGAE(hidden_dim=hidden_dim, encoder_internal_dim=encoder_internal_dim)
 

@@ -42,7 +42,7 @@ val_loader_lstm = DataLoader(
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-model_lstm = LSTMHarmonyModel(vocab_size=len(chord_id_features) + tokenizer.FIST_CHORD_TOKEN_INDEX)
+model_lstm = LSTMHarmonyModel(vocab_size=len(chord_id_features) + tokenizer.FIST_CHORD_TOKEN_INDEX, hidden_dim=128)
 model_lstm.train()
 model_lstm.to(device)
 

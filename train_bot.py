@@ -43,7 +43,7 @@ val_loader_bot = DataLoader(
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-model_bot = BagOfTransitionsAutoencoder(vocab_size=len(BoT_vocab))
+model_bot = BagOfTransitionsAutoencoder(vocab_size=len(BoT_vocab), latent_dim=128)
 model_bot.train()
 model_bot.to(device)
 

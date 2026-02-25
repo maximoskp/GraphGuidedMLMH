@@ -38,7 +38,7 @@ val_loader_matrix = DataLoader(
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-model_matrix = TransitionMatrixAutoencoder(D=len(chord_id_features))
+model_matrix = TransitionMatrixAutoencoder(D=len(chord_id_features), latent_dim=128)
 model_matrix.train()
 model_matrix.to(device)
 

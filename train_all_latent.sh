@@ -10,17 +10,19 @@ scripts=(
 # Name of the conda environment
 conda_env="torch"
 
-# Loop through the scripts and create a screen for each
+# Path to global conda
+CONDA_SH="/opt/miniconda3/etc/profile.d/conda.sh"
+
 for script in "${scripts[@]}"; do
-    # Extract the base name of the script (first word) to use as the screen name
-    screen_name=$(basename "$(echo $script | awk '{print $1}')" .py)
-    
-    # Start a new detached screen and execute commands
+    script_name=$(echo "$script" | awk '{print $1}')
+    screen_name=$(basename "$script_name" .py)
+
     screen -dmS "$screen_name" bash -c "
-        source /opt/miniconda3/etc/profile.d/conda.sh;  # Update this path if your conda is located elsewhere
-        conda activate $conda_env;
-        python $script;
+        source \"$CONDA_SH\"
+        conda activate \"$conda_env\"
+        python $script
         exec bash
     "
+
     echo "Started screen '$screen_name' for script '$script'."
 done

@@ -83,7 +83,7 @@ def main():
     os.makedirs('results', exist_ok=True)
     os.makedirs('results/contrastive', exist_ok=True)
 
-    save_path = os.path.join( 'saved_models', 'contrastive', f'{source_name}.csv' )
+    save_path = os.path.join( 'saved_models', 'contrastive', f'{source_name}.pt' )
     os.makedirs('saved_models', exist_ok=True)
     os.makedirs('saved_models/contrastive', exist_ok=True)
 
