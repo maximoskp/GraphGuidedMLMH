@@ -56,8 +56,8 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 hidden_dim = 128
 encoder_internal_dim = 128
-
 model = HarmonicGAE(hidden_dim=hidden_dim, encoder_internal_dim=encoder_internal_dim)
+# model = HarmonicTransformerGAE(hidden_dim=hidden_dim)
 
 optimizer_gae = torch.optim.AdamW(model.parameters(), lr=1e-5)
 

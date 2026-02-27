@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoderLayer, Sequential, Linear, ReLU
 from torch_geometric.data import Data, Batch
-from torch_geometric.nn import GINEConv
+from torch_geometric.nn import GINEConv, GATv2Conv
+import torch.nn.functional as F
+from torch.nn import Linear, LayerNorm, Sequential, ReLU
+from torch_geometric.nn import TransformerConv, global_mean_pool, JumpingKnowledge, GlobalAttention
 from collections import defaultdict
 import math
 from copy import deepcopy
@@ -191,12 +194,14 @@ class HarmonicGraphEncoder(torch.nn.Module):
         # Edge projection (CRUCIAL)
         self.edge_proj = Linear(edge_dim, hidden_dim)
 
-        # Update MLP used by GINE
+        # # Update MLP used by GINE
         self.conv1 = GINEConv(
             Sequential(
                 Linear(hidden_dim, internal_dim),
                 ReLU(),
-                Linear(internal_dim, hidden_dim)
+                Linear(internal_dim, internal_dim),
+                # ReLU(),
+                # Linear(internal_dim, hidden_dim)
             )
         )
 
@@ -204,9 +209,31 @@ class HarmonicGraphEncoder(torch.nn.Module):
             Sequential(
                 Linear(hidden_dim, internal_dim),
                 ReLU(),
-                Linear(internal_dim, hidden_dim)
+                Linear(internal_dim, internal_dim),
+                # ReLU(),
+                # Linear(internal_dim, hidden_dim)
             )
         )
+
+        # self.conv3 = GINEConv(
+        #     Sequential(
+        #         Linear(hidden_dim, internal_dim),
+        #         ReLU(),
+        #         Linear(internal_dim, internal_dim),
+        #         ReLU(),
+        #         Linear(internal_dim, hidden_dim)
+        #     )
+        # )
+
+        # self.conv4 = GINEConv(
+        #     Sequential(
+        #         Linear(hidden_dim, internal_dim),
+        #         ReLU(),
+        #         Linear(internal_dim, internal_dim),
+        #         ReLU(),
+        #         Linear(internal_dim, hidden_dim)
+        #     )
+        # )
     # end init
 
     def forward(self, data):
@@ -218,6 +245,10 @@ class HarmonicGraphEncoder(torch.nn.Module):
         x = self.conv1(x, data.edge_index, edge_attr)
         x = torch.relu(x)
         x = self.conv2(x, data.edge_index, edge_attr)
+        # x = torch.relu(x)
+        # x = self.conv3(x, data.edge_index, edge_attr)
+        # x = torch.relu(x)
+        # x = self.conv4(x, data.edge_index, edge_attr)
 
         pooled = torch.sum(x, axis=0).unsqueeze(0)
 
@@ -252,6 +283,105 @@ class HarmonicGAE(torch.nn.Module):
         return probs, enc_pooled
     # end forward
 # end HarmonicGAE
+
+class HarmonicGraphTransformerEncoder(torch.nn.Module):
+    def __init__(
+        self,
+        node_dim=24,
+        edge_dim=14,
+        hidden_dim=128,
+        heads=4,
+        num_layers=4
+    ):
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+
+        # Input projections
+        self.lin_in = Linear(node_dim, hidden_dim)
+        self.edge_proj = Linear(edge_dim, hidden_dim)
+
+        # TransformerConv layers
+        self.convs = torch.nn.ModuleList()
+        self.norms = torch.nn.ModuleList()
+
+        for _ in range(num_layers):
+            self.convs.append(
+                TransformerConv(
+                    hidden_dim,
+                    hidden_dim // heads,
+                    heads=heads,
+                    edge_dim=hidden_dim,
+                    beta=True  # enables residual weighting
+                )
+            )
+            self.norms.append(LayerNorm(hidden_dim))
+
+        # Jumping Knowledge
+        self.jk = JumpingKnowledge(mode='cat')
+
+        # Attention pooling
+        self.pool = GlobalAttention(
+            gate_nn=Sequential(
+                Linear(hidden_dim * num_layers, hidden_dim),
+                ReLU(),
+                Linear(hidden_dim, 1)
+            )
+        )
+
+    def forward(self, data):
+        x = self.lin_in(data.x)
+        edge_attr = self.edge_proj(data.edge_attr)
+
+        xs = []
+
+        for conv, norm in zip(self.convs, self.norms):
+            x_res = x
+            x = conv(x, data.edge_index, edge_attr)
+            x = norm(x + x_res)  # residual
+            x = F.relu(x)
+            xs.append(x)
+
+        # Jumping Knowledge aggregation
+        x = self.jk(xs)
+
+        # Pooling (if batched graphs exist)
+        if hasattr(data, 'batch'):
+            pooled = self.pool(x, data.batch)
+        else:
+            pooled = x.mean(dim=0, keepdim=True)
+
+        return x, pooled
+# end HarmonicGraphEncoder
+
+class HarmonicTransformerGAE(torch.nn.Module):
+    def __init__(
+        self,
+        node_dim=24,
+        edge_dim=14,
+        hidden_dim=128,
+        heads=4,
+        num_layers=4
+    ):
+        super().__init__()
+
+        self.encoder = HarmonicGraphEncoder(
+            node_dim=node_dim,
+            edge_dim=edge_dim,
+            hidden_dim=hidden_dim,
+            heads=heads,
+            num_layers=num_layers
+        )
+
+        self.decoder = BilinearDecoder(hidden_dim * num_layers)
+
+    def forward(self, data):
+        node_emb, enc_pooled = self.encoder(data)
+        probs = self.decoder(node_emb)
+        return probs, enc_pooled
+# end HarmonicGAE
+
 
 def edge_index_to_dense(data):
     N = data.x.size(0)

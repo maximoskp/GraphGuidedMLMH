@@ -15,8 +15,8 @@ if not os.path.exists('data/gae_PCA_per_epoch.pickle'):
     other_dirs = os.listdir(parent_dir_idioms)
     idiom_dirs = [f for f in other_dirs if '.pickle' not in f]
 
-    # full_dirs = [val_dir]
-    full_dirs = []
+    full_dirs = [val_dir]
+    # full_dirs = []
     for d in tqdm(idiom_dirs):
         full_dirs.append(os.path.join(parent_dir_idioms, d))
 
