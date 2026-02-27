@@ -8,6 +8,8 @@ import math
 from copy import deepcopy
 from tqdm import tqdm
 import os
+import numpy as np
+from computeDIC import computeDICfromBinaryNP
 
 ### ======================= GRAPH-GUIDED MODELS =======================
 # -----------------------------
@@ -49,7 +51,12 @@ def compute_edge_features(src_feat, dst_feat):
     else:
         pitch_overlap = intersection / union
     
-    return torch.tensor([normalized_fifths_distance, pitch_overlap], dtype=torch.float)
+    # DIC
+    d, _ = computeDICfromBinaryNP(src_pcs.numpy(), dst_pcs.numpy())
+    if d.max() > 0:
+        d = d / d.max()  # normalize DIC vector
+    
+    return torch.tensor([normalized_fifths_distance, pitch_overlap, *d], dtype=torch.float)
 # end compute_edge_features
 
 # def make_graph_from_chords(chord_ids_sequence, chord_id_features):
@@ -175,7 +182,7 @@ def make_graph_from_input_ids(chord_id_duplicates_sequence, chord_id_features, u
 # ================ GRAPH models ====================
 
 class HarmonicGraphEncoder(torch.nn.Module):
-    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64, internal_dim=64):
+    def __init__(self, node_dim=24, edge_dim=14, hidden_dim=64, internal_dim=64):
         super().__init__()
 
         # Node projection
@@ -233,7 +240,7 @@ class BilinearDecoder(torch.nn.Module):
 # end BilinearDecoder
 
 class HarmonicGAE(torch.nn.Module):
-    def __init__(self, node_dim=24, edge_dim=2, hidden_dim=64, encoder_internal_dim=64):
+    def __init__(self, node_dim=24, edge_dim=14, hidden_dim=64, encoder_internal_dim=64):
         super().__init__()
         self.encoder = HarmonicGraphEncoder(node_dim, edge_dim, hidden_dim, internal_dim=encoder_internal_dim)
         self.decoder = BilinearDecoder(hidden_dim)
