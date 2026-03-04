@@ -391,3 +391,49 @@ def contrastive_loss(z_s, z_t, temperature):
 
     return 0.5 * (loss_s2t + loss_t2s)
 # end contrastive_loss
+
+def contrastive_normalized_loss(z_s, z_t, temperature):
+    """
+    z_s: (B, D)
+    z_t: (B, D)
+    """
+    B = z_s.size(0)
+
+    z_s = F.normalize(z_s, dim=-1)
+    z_t = F.normalize(z_t, dim=-1)
+
+    logits = torch.matmul(z_s, z_t.T) / temperature
+
+    labels = torch.arange(B, device=z_s.device)
+
+    loss_s2t = F.cross_entropy(logits, labels)
+    loss_t2s = F.cross_entropy(logits.T, labels)
+
+    return 0.5 * (loss_s2t + loss_t2s)
+# end contrastive_normalized_loss
+
+'''
+logits_loss_fn = torch.nn.CrossEntropyLoss(ignore_index=-100)
+contrastive_loss_fn = torch.nn.MSE()
+
+foreign_guidance_embeddings = guidance_batch["lstm_embeddings"]
+home_guidance_embeddings = home_batch["lstm_embeddings"]
+
+melody_grid = home_batch["pianoroll"]
+harmony_target = home_batch["harmony_ids"]
+
+# Step 1: train contrastive latent attraction
+logits, hidden = transformer_model(melody_grid,harmony_all_masked_tokens, foreign_guidance_embeddings, return_hidden=True)
+z_guidance, z_transformer = contrastive_model( foreign_guidance_embeddings, hidden)
+
+foreign_guidance_loss = contrastive_loss_fn(z_guidance,z_transformer)
+
+# Step 2: train home attraction validation
+logits, hidden = transformer_model(melody_grid,harmony_all_masked_tokens, home_guidance_embeddings, return_hidden=True)
+z_guidance, z_transformer = contrastive_model( home_guidance_embeddings, hidden)
+
+home_guidance_loss = contrastive_loss_fn(z_guidance,z_transformer)
+
+logits_loss = logits_loss_fn(logits.view(-1, logits.size(-1)), harmony_target.view(-1))
+
+'''

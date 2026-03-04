@@ -181,6 +181,10 @@ def main():
     other_dirs = os.listdir(parent_dir_idioms)
     idiom_dirs = [f for f in other_dirs if '.pickle' not in f]
 
+    parent_dir_wiki_nott = '/mnt/ssd2/maximos/data/mel_harm_other_CA'
+    other_dirs = os.listdir(parent_dir_wiki_nott)
+    wiki_nott_dirs = [f for f in other_dirs if '.pickle' not in f]
+
     full_dirs = []
     names = []
     for d in dataset_subdirs:
@@ -188,6 +192,9 @@ def main():
         names.append(d)
     for d in idiom_dirs:
         full_dirs.append(os.path.join(parent_dir_idioms, d))
+        names.append(d)
+    for d in wiki_nott_dirs:
+        full_dirs.append(os.path.join(parent_dir_wiki_nott, d))
         names.append(d)
 
     os.makedirs('data', exist_ok=True)

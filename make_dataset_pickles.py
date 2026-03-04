@@ -11,7 +11,8 @@ tokenizer = CSGridMLMTokenizer(
     use_full_range_melody=False
 )
 
-root_path = '/mnt/ssd2/maximos/data/coinvent_midi'
+# root_path = '/mnt/ssd2/maximos/data/coinvent_midi'
+root_path = '/mnt/ssd2/maximos/data/mel_harm_other_CA'
 
 idioms = os.listdir(root_path)
 
