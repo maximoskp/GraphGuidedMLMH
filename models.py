@@ -335,6 +335,11 @@ class SEFiLMModel(nn.Module):
             param.requires_grad = True
     # end unfreeze_all
 
+    def film_parameters(self):
+        for name, param in self.named_parameters():
+            if "film" in name:
+                yield param
+    # end film_parameters
 # end SEFiLMModel
 
 # =============== CONTRASTIVE =========================
