@@ -419,7 +419,7 @@ def contrastive_loss(z_s, z_t, temperature):
     return 0.5 * (loss_s2t + loss_t2s)
 # end contrastive_loss
 
-def contrastive_normalized_loss(z_s, z_t, temperature):
+def contrastive_normalized_loss(z_s, z_t):
     """
     z_s: (B, D)
     z_t: (B, D)
@@ -429,7 +429,7 @@ def contrastive_normalized_loss(z_s, z_t, temperature):
     z_s = F.normalize(z_s, dim=-1)
     z_t = F.normalize(z_t, dim=-1)
 
-    logits = torch.matmul(z_s, z_t.T) / temperature
+    logits = torch.matmul(z_s, z_t.T)
 
     labels = torch.arange(B, device=z_s.device)
 

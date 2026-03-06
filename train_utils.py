@@ -800,23 +800,25 @@ def validation_lacta_loop(
                 )
 
                 # Step 1: contrastive latent attraction validation
+                z_guidance = contrastive_model.source_proj(foreign_guidance_embeddings.to(device))
                 logits, hidden = transformer_model(
                     melody_grid.to(device),
                     harmony_input.to(device),
-                    foreign_guidance_embeddings.to(device),
+                    z_guidance.to(device),
                     return_hidden=True
                 )
-                z_guidance, z_transformer = contrastive_model( foreign_guidance_embeddings.to(device), hidden.to(device))
+                z_guidance, z_transformer, _ = contrastive_model( foreign_guidance_embeddings.to(device), hidden.to(device))
                 foreign_guidance_loss = contrastive_loss_fn(z_guidance,z_transformer)
 
                 # Step 2: home attraction validation
+                z_guidance = contrastive_model.source_proj(home_guidance_embeddings.to(device))
                 logits, hidden = transformer_model(
                     melody_grid.to(device),
                     harmony_input.to(device),
-                    home_guidance_embeddings.to(device),
+                    z_guidance.to(device),
                     return_hidden=True
                 )
-                z_guidance, z_transformer = contrastive_model( home_guidance_embeddings.to(device), hidden.to(device))
+                z_guidance, z_transformer, _ = contrastive_model( home_guidance_embeddings.to(device), hidden.to(device))
                 home_guidance_loss = contrastive_loss_fn(z_guidance,z_transformer)
 
                 logits_loss = logits_loss_fn(logits.view(-1, logits.size(-1)), harmony_target.view(-1))
@@ -938,23 +940,25 @@ def train_lacta(
                 )
                 
                 # Step 1: train contrastive latent attraction
+                z_guidance = contrastive_model.source_proj(foreign_guidance_embeddings.to(device))
                 logits, hidden = transformer_model(
                     melody_grid.to(device),
                     harmony_input.to(device),
-                    foreign_guidance_embeddings.to(device),
+                    z_guidance.to(device),
                     return_hidden=True
                 )
-                z_guidance, z_transformer = contrastive_model( foreign_guidance_embeddings.to(device), hidden.to(device))
+                z_guidance, z_transformer, _ = contrastive_model( foreign_guidance_embeddings.to(device), hidden.to(device))
                 foreign_guidance_loss = contrastive_loss_fn(z_guidance,z_transformer)
 
                 # Step 2: train home attraction validation
+                z_guidance = contrastive_model.source_proj(home_guidance_embeddings.to(device))
                 logits, hidden = transformer_model(
                     melody_grid.to(device),
                     harmony_input.to(device),
-                    home_guidance_embeddings.to(device),
+                    z_guidance.to(device),
                     return_hidden=True
                 )
-                z_guidance, z_transformer = contrastive_model( home_guidance_embeddings.to(device), hidden.to(device))
+                z_guidance, z_transformer, _ = contrastive_model( home_guidance_embeddings.to(device), hidden.to(device))
                 home_guidance_loss = contrastive_loss_fn(z_guidance,z_transformer)
 
                 logits_loss = logits_loss_fn(logits.view(-1, logits.size(-1)), harmony_target.view(-1))

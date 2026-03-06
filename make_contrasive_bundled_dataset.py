@@ -67,7 +67,7 @@ model_SE = SEFiLMModel(
     num_layers=8,
     grid_length=80,
     pianoroll_dim=tokenizer.pianoroll_dim,
-    guidance_dim=None,
+    guidance_dim=64,
     device=device,
 )
 checkpoint = torch.load('saved_models/SE/pretrained.pt', map_location=device_name)

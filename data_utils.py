@@ -396,6 +396,8 @@ class ContrastiveCollator:
         bot = torch.stack([item["bot_embeddings"] for item in batch]).to(torch.float32)
         graph = torch.stack([item["graph_embeddings"] for item in batch]).to(torch.float32)
         transformer = torch.stack([item["transformer_embeddings"] for item in batch]).to(torch.float32)
+        pianoroll = torch.stack([torch.tensor(item["pianoroll"], dtype=torch.float32) for item in batch])
+        harmony_ids = torch.stack([torch.tensor(item["harmony_ids"], dtype=torch.long) for item in batch])
 
         return {
             "lstm_embeddings": lstm,
@@ -403,5 +405,7 @@ class ContrastiveCollator:
             "bot_embeddings": bot,
             "graph_embeddings": graph,
             "transformer_embeddings": transformer,
+            "pianoroll": pianoroll,
+            "harmony_ids": harmony_ids
         }
 # end ContrastiveCollator
