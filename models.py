@@ -165,17 +165,27 @@ class FiLMAdapter(nn.Module):
     # end init
 
     def forward(self, x, guidance):
-        """
-        x: (B, L, d_model)
-        guidance: (B, guidance_dim)
-        """
-        gamma = self.gamma(guidance).unsqueeze(1)  # (B, 1, d_model)
-        beta = self.beta(guidance).unsqueeze(1)    # (B, 1, d_model)
+        if guidance is None:
+            return x
 
-        # Identity-safe initialization expectation:
-        # gamma initialized near 1, beta near 0
+        gamma = self.gamma(guidance).unsqueeze(1)
+        beta = self.beta(guidance).unsqueeze(1)
+
         return gamma * x + beta
-    # end forwad
+    # end forward
+
+    # def forward(self, x, guidance):
+    #     """
+    #     x: (B, L, d_model)
+    #     guidance: (B, guidance_dim)
+    #     """
+    #     gamma = self.gamma(guidance).unsqueeze(1)  # (B, 1, d_model)
+    #     beta = self.beta(guidance).unsqueeze(1)    # (B, 1, d_model)
+
+    #     # Identity-safe initialization expectation:
+    #     # gamma initialized near 1, beta near 0
+    #     return gamma * x + beta
+    # # end forwad
 # end FiLMAdapter
 
 class TransformerEncoderLayerWithFiLM(nn.Module):
@@ -184,10 +194,11 @@ class TransformerEncoderLayerWithFiLM(nn.Module):
         self.layer = encoder_layer
         self.guidance_dim = guidance_dim
 
-        if guidance_dim is not None:
-            self.film = FiLMAdapter(d_model, guidance_dim)
-        else:
-            self.film = None
+        # if guidance_dim is not None:
+        #     self.film = FiLMAdapter(d_model, guidance_dim)
+        # else:
+        #     self.film = None
+        self.film = FiLMAdapter(d_model, guidance_dim)
 
         self.last_attn_weights = None
     # end init
@@ -216,7 +227,9 @@ class TransformerEncoderLayerWithFiLM(nn.Module):
         src = self.layer.norm2(src)
 
         # --- FiLM conditioning ---
-        if self.film is not None and guidance is not None:
+        # if self.film is not None and guidance is not None:
+        #     src = self.film(src, guidance)
+        if guidance is not None:
             src = self.film(src, guidance)
 
         return src
@@ -256,6 +269,7 @@ class SEFiLMModel(nn.Module):
 
         # --- Encoder Layers with FiLM ---
         self.encoder_layers = nn.ModuleList()
+        self.film_layers = nn.ModuleList()
 
         for _ in range(num_layers):
             base_layer = TransformerEncoderLayer(
@@ -273,6 +287,7 @@ class SEFiLMModel(nn.Module):
                     guidance_dim=guidance_dim
                 )
             )
+            self.film_layers.append(self.encoder_layers[-1].film)
 
         self.output_head = nn.Linear(d_model, chord_vocab_size, device=device)
 
@@ -324,10 +339,18 @@ class SEFiLMModel(nn.Module):
             return harmony_logits
     # end forward
 
+    # def freeze_base(self):
+    #     for name, param in self.named_parameters():
+    #         if "film" not in name:
+    #             param.requires_grad = False
+    # # end freeze_base
+
     def freeze_base(self):
-        for name, param in self.named_parameters():
-            if "film" not in name:
-                param.requires_grad = False
+        for param in self.parameters():
+            param.requires_grad = False
+        for m in self.film_layers:
+            for param in m.parameters():
+                param.requires_grad = True
     # end freeze_base
 
     def unfreeze_all(self):
@@ -336,9 +359,8 @@ class SEFiLMModel(nn.Module):
     # end unfreeze_all
 
     def film_parameters(self):
-        for name, param in self.named_parameters():
-            if "film" in name:
-                yield param
+        for m in self.film_layers:
+            yield from m.parameters()
     # end film_parameters
 # end SEFiLMModel
 

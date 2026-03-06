@@ -60,8 +60,10 @@ def main():
 
     source_dim = train_dataset[0][source_key].shape[0]
     transformer_dim = train_dataset[0]['transformer_embeddings'].shape[0]
+    
     print(source_name, ' - source_dim: ', source_dim)
     print('transformer', ' - transformer_dim: ', transformer_dim)
+    print('shared', ' - shared_dim: ', shared_dim)
 
     collator = ContrastiveCollator(pad_id=0)
 
@@ -102,7 +104,7 @@ def main():
         num_layers=8,
         grid_length=80,
         pianoroll_dim=tokenizer.pianoroll_dim,
-        guidance_dim=None,
+        guidance_dim=shared_dim,
         device=device,
     )
     checkpoint = torch.load('saved_models/SE/pretrained.pt', map_location=device_name)

@@ -2,10 +2,10 @@
 
 # List of Python scripts with their respective arguments
 scripts=(
-    "train_contrastive.py -s lstm -d 32 -g0 -e 200 -l 1e-4 -b 64"
-    "train_contrastive.py -s matrix -d 32 -g0 -e 200 -l 1e-4 -b 64"
-    "train_contrastive.py -s bot -d 32 -g0 -e 200 -l 1e-4 -b 64"
-    "train_contrastive.py -s graph -d 32 -g0 -e 200 -l 1e-4 -b 64"
+    "train_contrastive.py -s lstm -d 64 -g 0 -e 200 -l 1e-4 -b 64"
+    "train_contrastive.py -s matrix -d 64 -g 0 -e 200 -l 1e-4 -b 64"
+    "train_contrastive.py -s bot -d 64 -g 0 -e 200 -l 1e-4 -b 64"
+    "train_contrastive.py -s graph -d 64 -g 0 -e 200 -l 1e-4 -b 64"
 )
 
 # Name of the conda environment

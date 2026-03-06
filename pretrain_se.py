@@ -51,7 +51,7 @@ def main():
         num_layers=8,
         grid_length=80,
         pianoroll_dim=tokenizer.pianoroll_dim,
-        guidance_dim=None,
+        guidance_dim=64,
         device=device,
     )
     model.to(device)
