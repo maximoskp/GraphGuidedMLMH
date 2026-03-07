@@ -114,13 +114,13 @@ def main():
     optimizer = AdamW(transformer_model.film_parameters(), lr=lr)
 
     # save results
-    results_path = os.path.join( 'results', 'lacta', f'{source_name}.csv' )
+    results_path = os.path.join( 'results', 'lacta_full', f'{source_name}.csv' )
     os.makedirs('results', exist_ok=True)
-    os.makedirs('results/lacta', exist_ok=True)
+    os.makedirs('results/lacta_full', exist_ok=True)
 
     os.makedirs('saved_models/', exist_ok=True)
-    os.makedirs('saved_models/lacta/', exist_ok=True)
-    save_dir = 'saved_models/lacta/'
+    os.makedirs('saved_models/lacta_full/', exist_ok=True)
+    save_dir = 'saved_models/lacta_full/'
     transformer_path = save_dir + f'{source_name}.pt'
 
     train_lacta(
@@ -135,7 +135,7 @@ def main():
         bar_token_id=tokenizer.bar_token_id,
         validations_per_epoch=1,
         tqdm_position=0,
-        freeze_base=True
+        freeze_base=False
     )
 
 # end main

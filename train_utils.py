@@ -879,7 +879,8 @@ def train_lacta(
         transformer_path=None,
         bar_token_id=None,
         validations_per_epoch=1,
-        tqdm_position=0
+        tqdm_position=0,
+        freeze_base=True
     ):
     device = transformer_model.device
     best_val_loss = np.inf
@@ -919,7 +920,8 @@ def train_lacta(
             tepoch.set_description(f'Epoch {epoch} | trn')
             for batch in tepoch:
                 transformer_model.train()
-                transformer_model.freeze_base()
+                if freeze_base:
+                    transformer_model.freeze_base()
                 melody_grid = batch["pianoroll"].to(device)
                 harmony_gt = batch["harmony_ids"].to(device)
                 home_guidance_embeddings = batch[source_key].to(device)
