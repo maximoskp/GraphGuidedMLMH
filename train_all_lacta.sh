@@ -7,10 +7,15 @@
 
 # List of Python scripts with their respective arguments
 scripts=(
-    "train_lacta.py -s lstm -d 64 -g0 -e 200 -l 1e-4 -b 32"
-    "train_lacta.py -s matrix -d 64 -g0 -e 200 -l 1e-4 -b 32"
-    "train_lacta.py -s bot -d 64 -g0 -e 200 -l 1e-4 -b 32"
-    "train_lacta.py -s graph -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s lstm -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s matrix -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s bot -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s graph -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    
+    "train_full_model_lacta.py -s lstm -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s matrix -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s bot -d 64 -g0 -e 200 -l 1e-4 -b 32"
+    "train_full_model_lacta.py -s graph -d 64 -g0 -e 200 -l 1e-4 -b 32"
 )
 
 # Name of the conda environment
