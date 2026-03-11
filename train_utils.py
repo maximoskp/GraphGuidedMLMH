@@ -734,6 +734,214 @@ def train_contrastive(
                 writer.writerow( [epoch, train_loss, val_loss, saving_version] )
         # end epoch loop
 
+# ============ Simple FiLM ==============
+
+def validation_film_loop(
+        transformer_model, contrastive_model,
+        valloader,
+        mask_token_id, bar_token_id,
+        source_key,
+        num_visible,
+        logits_loss_fn,
+        epoch,
+        step,
+        train_loss, train_accuracy,
+        best_val_loss, saving_version,
+        results_path=None, transformer_path=None, tqdm_position=0
+    ):
+    device = transformer_model.device
+    transformer_model.eval()
+    with torch.no_grad():
+        running_loss = 0
+        val_loss = 0
+        running_accuracy = 0
+        val_accuracy = 0
+
+        batch_num = 0
+        print('validation')
+        with tqdm(valloader, unit='batch', position=tqdm_position) as tepoch:
+            tepoch.set_description(f'Epoch {epoch}@{step}| val')
+            for batch in tepoch:
+                melody_grid = batch["pianoroll"].to(device)
+                harmony_gt = batch["harmony_ids"].to(device)
+                home_guidance_embeddings = batch[source_key].to(device)
+
+                harmony_input, harmony_target = full_to_partial_masking(
+                    harmony_gt,
+                    mask_token_id,
+                    num_visible,
+                    bar_token_id=bar_token_id
+                )
+
+                z_guidance = contrastive_model.source_proj(home_guidance_embeddings.to(device))
+                logits, _ = transformer_model(
+                    melody_grid.to(device),
+                    harmony_input.to(device),
+                    z_guidance.to(device),
+                    return_hidden=True
+                )
+
+                logits_loss = logits_loss_fn(logits.view(-1, logits.size(-1)), harmony_target.view(-1))
+
+                loss = logits_loss
+
+                # update loss and accuracy
+                batch_num += 1
+                running_loss += loss.item()
+                val_loss = running_loss/batch_num
+                # accuracy
+                predictions = logits.argmax(dim=-1)
+                # mask = torch.logical_and(harmony_target != harmony_input, harmony_target != -100)
+                mask = harmony_target != -100
+                running_accuracy += (predictions[mask] == harmony_target[mask]).sum().item()/mask.sum().item()
+                val_accuracy = running_accuracy/batch_num
+
+                tepoch.set_postfix(
+                    loss=val_loss,
+                    acc=val_accuracy
+                )
+            # end for batch
+        # end with tqdm
+    # end with no grad
+    if transformer_path is not None:
+        if  best_val_loss > val_loss:
+            print('saving!')
+            saving_version += 1
+            best_val_loss = val_loss
+            torch.save(transformer_model.state_dict(), transformer_path)
+    print(f'validation: accuracy={val_accuracy}, loss={val_loss}')
+    print('results_path: ', results_path)
+    if results_path is not None:
+        with open( results_path, 'a' ) as f:
+            writer = csv.writer(f)
+            writer.writerow( [epoch, step, train_loss, \
+                            train_accuracy, \
+                            val_loss, \
+                            val_accuracy, saving_version] )
+    return best_val_loss, saving_version
+# end validation_film_loop
+def train_film(
+        transformer_model, contrastive_model, 
+        logits_loss_fn,
+        optimizer, trainloader, valloader, mask_token_id,
+        source_key,
+        epochs=100,
+        exponent=-1,
+        results_path=None,
+        transformer_path=None,
+        bar_token_id=None,
+        validations_per_epoch=1,
+        tqdm_position=0,
+        freeze_base=True
+    ):
+    device = transformer_model.device
+    best_val_loss = np.inf
+    saving_version = 0
+
+    # save results and model
+    print('results_path:', results_path)
+    if results_path is not None:
+        result_fields = ['epoch', 'step', 'train_loss', \
+                        'train_acc', \
+                        'val_loss', \
+                        'val_acc', 'sav_version']
+        with open( results_path, 'w' ) as f:
+            writer = csv.writer(f)
+            writer.writerow( result_fields )
+
+    # Compute total training steps
+    total_steps = len(trainloader) * epochs
+    # Define the scheduler
+    # warmup_steps = int(0.1 * total_steps)  # 10% of total steps for warmup
+    # scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
+    step = 0
+
+    for epoch in range(epochs):
+        running_loss = 0
+        train_loss = 0
+        running_accuracy = 0
+        train_accuracy = 0
+        batch_num = 0
+        
+        with tqdm(trainloader, unit='batch', position=tqdm_position) as tepoch:
+            tepoch.set_description(f'Epoch {epoch} | trn')
+            for batch in tepoch:
+                transformer_model.train()
+                if freeze_base:
+                    transformer_model.freeze_base()
+                melody_grid = batch["pianoroll"].to(device)
+                harmony_gt = batch["harmony_ids"].to(device)
+                home_guidance_embeddings = batch[source_key].to(device)
+                
+                if exponent == -1:
+                    percent_visible = 0.0
+                else:
+                    percent_visible = min(1.0, (step+1)/total_steps)**exponent  # 5th power goes around half way near zero
+                L = harmony_gt.shape[1]
+                num_visible = min( int(L * percent_visible), L-1 )  # ensure at least one token is predicted
+                harmony_input, harmony_target = full_to_partial_masking(
+                    harmony_gt,
+                    mask_token_id,
+                    num_visible,
+                    bar_token_id=bar_token_id
+                )
+                
+                z_guidance = contrastive_model.source_proj(home_guidance_embeddings.to(device))
+                logits, _ = transformer_model(
+                    melody_grid.to(device),
+                    harmony_input.to(device),
+                    z_guidance.to(device),
+                    return_hidden=True
+                )
+
+                logits_loss = logits_loss_fn(logits.view(-1, logits.size(-1)), harmony_target.view(-1))
+
+                optimizer.zero_grad()
+                loss = logits_loss
+                loss.backward()
+                optimizer.step()
+                # scheduler.step()
+
+                # update loss and accuracy
+                batch_num += 1
+                running_loss += loss.item()
+                train_loss = running_loss/batch_num
+                # accuracy
+                predictions = logits.argmax(dim=-1)
+                # mask = torch.logical_and(harmony_target != harmony_input, harmony_target != -100)
+                mask = harmony_target != -100
+                running_accuracy += (predictions[mask] == harmony_target[mask]).sum().item()/max(1,mask.sum().item())
+                train_accuracy = running_accuracy/batch_num
+
+                tepoch.set_postfix(
+                    loss=train_loss,
+                    hacc=train_accuracy
+                )
+                step += 1
+                if step%(total_steps//(epochs*validations_per_epoch)) == 0 or step == total_steps:
+                    best_val_loss, saving_version = validation_film_loop(
+                        transformer_model, contrastive_model,
+                        valloader,
+                        mask_token_id,
+                        bar_token_id,
+                        source_key,
+                        num_visible,
+                        logits_loss_fn,
+                        epoch,
+                        step,
+                        train_loss,
+                        train_accuracy,
+                        best_val_loss,
+                        saving_version,
+                        results_path=results_path,
+                        transformer_path=transformer_path,
+                        tqdm_position=tqdm_position
+                    )
+            # end for batch
+        # end with tqdm
+    # end for epoch
+# end train_film
+
 
 # ================ LaCtA ================
 
