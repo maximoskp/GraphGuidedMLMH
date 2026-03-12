@@ -8,21 +8,17 @@ ffmpeg -framerate 60 -pattern_type glob -i '*.png' -r 15 -vf scale=512:-1 ../gra
 The latent space dimension needs to be known beforehand becasuse the transformer needs to be initialized with it.
 
 First pretrain models. Start with the transformer:
-
 pretrain_se.py
 
 and then pretrain the LSTM, Matrix, BoT and Graph models that produce the guidance embeddings:
-
 train_all_latent.sh
 
-Then train contrastive space:
-
-train_all_contrastive.sh
-
-Then make the contrastive dataset bundle, to facilitate LaCtA training:
-
+(This step was below the next step but made more sense here)
+Then make the contrastive dataset bundle, to facilitate LaCtA training :
 make_contrastive_bundled_dataset.py
 
-Then train LaCtA:
+Then train contrastive space:
+train_all_contrastive.sh
 
+Then train LaCtA:
 train_all_lacta.sh

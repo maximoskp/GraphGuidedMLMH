@@ -334,7 +334,7 @@ class SEFiLMModel(nn.Module):
         )
 
         if return_hidden:
-            return harmony_logits, torch.mean(encoded, axis=1).squeeze()
+            return harmony_logits, torch.mean(encoded[:, -self.grid_length:, :], axis=1).squeeze()
         else:
             return harmony_logits
     # end forward
